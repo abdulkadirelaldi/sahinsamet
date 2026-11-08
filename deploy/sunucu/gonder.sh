@@ -118,8 +118,11 @@ else
 fi
 
 # Göç öncesi yedek: göç geri alınamaz; dosya gece yedeğinden bağımsız ve 7 gün durur. Yedek
-# alınamazsa yayın burada durur, canlı değişmez.
+# alınamazsa yayın burada durur, canlı değişmez. `db` önce kaldırılır: ilk yayında henüz hiç
+# konteyner yoktu ve `exec` "service db is not running" ile düştü (2026-11-09). Çalışıyorsa
+# `up -d db` hiçbir şeye dokunmaz; `--wait` sağlık kontrolü geçene kadar bekler.
 ssh "${SSH_SECENEK[@]}" "$SUNUCU" "umask 077; cd /opt/sahinsamet && mkdir -p yedek && \
+  docker compose up -d --wait db && \
   docker compose exec -T db sh -c 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Fc' > yedek/goc-oncesi-$SURUM.tmp && \
   mv yedek/goc-oncesi-$SURUM.tmp yedek/goc-oncesi-$SURUM.dump && \
   find yedek -name 'goc-oncesi-*' -mtime +7 -delete || { rm -f yedek/goc-oncesi-$SURUM.tmp; exit 1; }"
