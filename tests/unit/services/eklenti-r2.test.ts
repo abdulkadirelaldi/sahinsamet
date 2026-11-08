@@ -46,19 +46,17 @@ const SABIT_AN = new Date('2026-10-14T12:00:00.000Z');
  * ⚠️ İÇERİK TESPİTİ — uzantı değil, `Content-Type` değil
  * ======================================================================== */
 
-/** Gerçek bir PNG — depoda bulunan tek görsel. */
-const GERCEK_PNG = readFileSync(
-  join(
-    KOK,
-    'node_modules/.pnpm/next-mdx-remote@6.0.0_@types+react@19.2.18_react@19.2.8/node_modules/next-mdx-remote/header.png',
-  ),
-);
+/**
+ * Gerçek bir PNG — depodaki uygulama simgesi (192×192). Bağımlılık klasöründeki bir dosyaya
+ * dayanmaz: temiz kurulumda (CI) da vardır.
+ */
+const GERCEK_PNG = readFileSync(join(KOK, 'src/app/icon.png'));
 
 describe('⚠️ sniffMime — İÇERİK okunuyor', () => {
   it('GERÇEK PNG tanınıyor ve boyutu doğru', () => {
     expect(sniffMime(GERCEK_PNG)).toBe('image/png');
-    // Dosya gerçekten 1500×500 (bağımsız olarak `file`/ölçümle doğrulandı).
-    expect(readImageDimensions(GERCEK_PNG, 'image/png')).toEqual({ width: 1500, height: 500 });
+    // Dosya gerçekten 192×192 (bağımsız olarak `file` ile doğrulandı).
+    expect(readImageDimensions(GERCEK_PNG, 'image/png')).toEqual({ width: 192, height: 192 });
   });
 
   it('⚠️ "image/png" YAZAN METİN reddediliyor — başlık yalanı tutmuyor', () => {
@@ -178,7 +176,7 @@ describe('⚠️ sniffMime — İÇERİK okunuyor', () => {
 
 describe('readImageDimensions', () => {
   it('PNG — IHDR sabit ofsette', () => {
-    expect(readImageDimensions(GERCEK_PNG, 'image/png')).toEqual({ width: 1500, height: 500 });
+    expect(readImageDimensions(GERCEK_PNG, 'image/png')).toEqual({ width: 192, height: 192 });
   });
 
   it('⚠️ JPEG — SOF ARANIYOR, sabit ofset YOK', () => {
