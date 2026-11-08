@@ -313,9 +313,9 @@ jobs:
           const titrek = rapor.stats?.flaky ?? 0;
           console.log(`geçen=${gecen} atlanan=${atlanan} titrek=${titrek}`);
 
-          // Spec'ler silinirse ya da koşmazsa da yeşil kalmasın (2026-11-02: 165'ti).
-          if (gecen < 150) {
-            console.error(`Yalnızca ${gecen} e2e testi geçti; en az 150 bekleniyor.`);
+          // Spec'ler silinirse ya da koşmazsa da yeşil kalmasın (2026-11-08: tek sayfalık sitede 127).
+          if (gecen < 120) {
+            console.error(`Yalnızca ${gecen} e2e testi geçti; en az 120 bekleniyor.`);
             process.exit(1);
           }
           // Titrek test yeniden denemede yeşile dönüyor: gizlenmesin, koşumda görünsün.
