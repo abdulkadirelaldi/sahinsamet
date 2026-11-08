@@ -1,0 +1,57 @@
+# bagimliliklar
+node_modules/
+.pnp
+.pnp.*
+.pnpm-store/
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# test & kapsam
+/coverage
+/playwright-report
+/blob-report
+/test-results
+/.playwright
+# LHCI'ın kendi çalışma dizini + artifact olarak yüklenen rapor çıktısı.
+# İkincisi bilerek noktasız: upload-artifact gizli dizinleri atlıyor (BULGU-004).
+/.lighthouseci
+/lighthouse-raporu
+/playwright-sonuc.json
+
+# ortam degiskenleri (§8.17) — .env.example HARIC hicbir .env repoya girmez
+.env
+.env.*
+!.env.example
+
+# prisma yerel veritabani
+/prisma/*.db
+/prisma/*.db-journal
+/prisma/dev.db*
+
+# diger paket yoneticileri yasak (ADR-003)
+package-lock.json
+yarn.lock
+npm-shrinkwrap.json
+
+# isletim sistemi / editor
+.DS_Store
+Thumbs.db
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# yedekler
+/backups/
+
+# prisma 7 — uretilen istemci (TypeScript kaynagi, `prisma generate` ile yeniden uretilir)
+/src/server/generated/

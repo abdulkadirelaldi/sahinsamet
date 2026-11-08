@@ -1,0 +1,16 @@
+{
+  // E2E'ye ÖZEL tsconfig — yalnızca Playwright okur (`playwright.config.ts` → `tsconfig`).
+  //
+  // TEK FARKI `baseUrl`. Kök `tsconfig.json` `paths` eşlemesini `baseUrl`
+  // OLMADAN tanımlıyor; TypeScript 5 ve Next bunu destekliyor, Playwright'in
+  // yükleyicisi desteklemiyor ve `@/...` içe aktarmaları "Cannot find module"
+  // ile düşüyor. Bu dosya yalnız o boşluğu kapatır.
+  //
+  // Kök `tsconfig.json` bu görevin kapsamı dışında olduğu için değiştirilmedi;
+  // ayrıca `baseUrl` eklemek Next ve `tsc` tarafını da etkilerdi — E2E'ye özgü
+  // bir sorunun bedelini tüm derlemeye ödetmenin gereği yok.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "."
+  }
+}

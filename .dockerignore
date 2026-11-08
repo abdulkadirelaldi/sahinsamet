@@ -1,0 +1,22 @@
+# Derleme bağlamına GİRMEYECEKLER — §8.17: sırlar imaja girmez.
+.env
+.env.*
+!.env.example
+
+# Bağımlılık ve derleme çıktıları imajın İÇİNDE yeniden üretiliyor.
+node_modules
+.next
+coverage
+playwright-report
+test-results
+.lighthouseci
+*.tsbuildinfo
+
+# Depo ve araç dosyaları
+.git
+.github
+.vscode
+.claude
+.DS_Store
+docs
+tests

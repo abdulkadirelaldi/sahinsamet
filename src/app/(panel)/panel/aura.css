@@ -1,0 +1,513 @@
+/* --------------------------------------------------------------------------
+   AURA — 2026-11-01. Sahibinin isteği: "wow dedirtecek, profesyonel, estetik".
+   Her ana bölümün kendi renk dünyası ve koyu, ışıltılı ana kartı var; ana kart
+   iki temada da aynı koyu mürekkep zeminde kalır, sayfanın odağı olur.
+   §5.2.1 korunuyor: WebGL/shader yok; hareket yalnızca transform ve opacity.
+   Kart içindeki yazı rengi `--text-*` üzerinden gelir, bileşen değişmeden okunur.
+   -------------------------------------------------------------------------- */
+.aura {
+  --text-primary: #ffffff;
+  --text-body: rgb(255 255 255 / 0.88);
+  --text-muted: rgb(255 255 255 / 0.72);
+  --accent: #c9bcff;
+  --accent-soft: #e2dbff;
+  /* Açık temanın koyu durum renkleri bu zeminde okunmuyordu. */
+  --danger: #fda4af;
+  --warning: #fcd34d;
+  --success: #6ee7b7;
+  --border: rgb(255 255 255 / 0.14);
+  --border-hover: rgb(255 255 255 / 0.24);
+  --border-strong: rgb(255 255 255 / 0.4);
+  --bg-elevated: rgb(255 255 255 / 0.1);
+  --bg-surface: rgb(255 255 255 / 0.08);
+  --bg-base: rgb(255 255 255 / 0.06);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: #100d26;
+  color: #ffffff;
+  box-shadow: 0 26px 50px -28px var(--aura-golge, rgb(91 61 255 / 0.75));
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+/* Kenar çizgisi ışığın ÜSTÜNDE: gölge olarak zeminde kalınca parlak bölgede kayboluyordu. */
+.aura::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+}
+.aura::before {
+  content: '';
+  position: absolute;
+  inset: -35%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(52% 58% at 74% 26%, var(--aura-1), transparent 74%),
+    radial-gradient(54% 60% at 24% 72%, var(--aura-2), transparent 74%),
+    radial-gradient(40% 46% at 84% 80%, var(--aura-3), transparent 74%);
+  animation: aura-suzul 20s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes aura-suzul {
+  from {
+    transform: translate3d(-3%, -2%, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(3%, 3%, 0) rotate(8deg);
+  }
+}
+.aura-gun {
+  --aura-1: rgb(109 74 255 / 0.62);
+  --aura-2: rgb(14 116 200 / 0.48);
+  --aura-3: rgb(219 39 119 / 0.34);
+  --aura-golge: rgb(91 61 255 / 0.7);
+}
+.aura-para {
+  --aura-1: rgb(5 150 105 / 0.62);
+  --aura-2: rgb(8 112 150 / 0.52);
+  --aura-3: rgb(101 130 20 / 0.36);
+  --aura-golge: rgb(5 150 105 / 0.6);
+}
+.aura-hayat {
+  --aura-1: rgb(139 61 255 / 0.66);
+  --aura-2: rgb(79 70 229 / 0.5);
+  --aura-3: rgb(192 38 150 / 0.42);
+  --aura-golge: rgb(139 61 255 / 0.7);
+}
+.aura-spor {
+  --aura-1: rgb(234 88 12 / 0.6);
+  --aura-2: rgb(190 18 80 / 0.48);
+  --aura-3: rgb(180 110 10 / 0.4);
+  --aura-golge: rgb(234 88 12 / 0.55);
+}
+.aura-saglik {
+  --aura-1: rgb(225 29 92 / 0.56);
+  --aura-2: rgb(14 116 200 / 0.5);
+  --aura-3: rgb(124 58 237 / 0.42);
+  --aura-golge: rgb(225 29 92 / 0.5);
+}
+.aura-dil {
+  --aura-1: rgb(13 148 136 / 0.6);
+  --aura-2: rgb(37 99 235 / 0.5);
+  --aura-3: rgb(245 158 11 / 0.36);
+  --aura-golge: rgb(13 148 136 / 0.55);
+}
+
+/* Bölüm üstü küçük başlık. */
+.ust-etiket {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Vurgu yazısı: `--accent` beyaz metnin ZEMİNİ için koyu; koyu temada yazı olarak
+   2,9:1 kalıyordu. Yazıda `--accent-soft` iki temada da ≥ 4.5:1. */
+.panel-modern .text-accent {
+  color: var(--accent-soft);
+}
+
+/* Durum renkli düğmede yazı: koyu temada kırmızı ve yeşil açık ton, beyaz yazı 2,8:1 ve 1,9:1
+   kalıyordu. Koyuda koyu yazı (≥ 7:1), açıkta beyaz. */
+.panel-modern :is(.bg-danger, .bg-success).text-white {
+  color: var(--uzeri-durum);
+}
+
+/* Ana kart içindeki cam kutucuk. */
+.cam-kutu {
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+.su-hizli {
+  color: #e0f2fe;
+  background: rgb(125 211 252 / 0.2);
+  box-shadow: inset 0 0 0 1px rgb(125 211 252 / 0.3);
+}
+
+/* Dokunuş ve üzerine gelme. */
+.panel-modern a.rounded-card {
+  transition:
+    transform 0.25s var(--ease-brand),
+    box-shadow 0.25s var(--ease-brand);
+}
+.panel-modern a.rounded-card:active {
+  transform: scale(0.985);
+}
+@media (hover: hover) {
+  .panel-modern a.rounded-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--golge-kart-ust);
+  }
+}
+.panel-modern :is(a, button).bg-gradient-accent {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    0 10px 22px -12px var(--accent-glow);
+}
+
+/* Sekme şeridi: bütün alt gezinmeler aynı dil. Taşan sekme kenarda kesilmez, solar. */
+.sekme-seridi {
+  margin: 0 -1rem -0.5rem;
+  padding: 0.125rem 1rem 0.875rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 0.875rem,
+    #000 calc(100% - 1.5rem),
+    transparent
+  );
+}
+.sekme-seridi::-webkit-scrollbar {
+  display: none;
+}
+.sekme {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding-inline: 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-body);
+  background: var(--bg-surface);
+  box-shadow: var(--golge-kart);
+  transition:
+    color 0.2s,
+    transform 0.2s var(--ease-brand);
+}
+.sekme:hover {
+  color: var(--text-primary);
+}
+.sekme:active {
+  transform: scale(0.96);
+}
+.sekme[aria-current='page'] {
+  color: #ffffff;
+  background: var(--gradient-accent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    0 10px 20px -12px var(--accent-glow);
+}
+/* Süzgeç ve aralık düğmelerinin seçili hâli de aynı: sayfa başına tek vurgu dili. */
+.panel-modern .border-accent\/40.bg-accent\/12 {
+  border-color: transparent;
+  color: #ffffff;
+  background: var(--gradient-accent);
+  box-shadow: 0 8px 16px -10px var(--accent-glow);
+}
+.sekme[aria-current='page'] .text-muted {
+  color: rgb(255 255 255 / 0.82);
+}
+
+/* Alt sekme: etkin göstergesi sekmeler arasında kayar. */
+.dock-hap {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.25rem;
+  width: calc((100% - 0.5rem) / 5);
+  height: 2rem;
+  pointer-events: none;
+  transition: transform 0.45s cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+.dock-hap::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 3.5rem;
+  margin-left: -1.75rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+}
+
+/* Alışkanlık işareti: tamamlanınca simge yaylanır. */
+@keyframes isaret-yayla {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.isaret-tam[aria-pressed='true'] {
+  background: linear-gradient(140deg, #10b981, #047857);
+  border-color: transparent;
+  box-shadow: 0 8px 18px -8px rgb(5 150 105 / 0.8);
+}
+.isaret-tam[aria-pressed='true'] svg {
+  animation: isaret-yayla 0.4s var(--ease-brand);
+}
+
+/* Yan menü. */
+.marka-isaret {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.625rem;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  background: var(--gradient-accent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.3),
+    0 8px 18px -8px var(--accent-glow);
+}
+.menu-oge {
+  position: relative;
+}
+.menu-oge[aria-current='page'] {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.menu-oge[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  inset-block: 0.5rem;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--gradient-accent);
+}
+@keyframes cekmece-gir {
+  from {
+    transform: translateX(-100%);
+  }
+}
+.panel-modern .cekmece-gir {
+  animation: cekmece-gir 0.32s var(--ease-brand) both;
+}
+
+/* Açılış: ana ekrandan açılınca kısa marka anı. Tarayıcı sekmesinde yok; dokunuşu
+   hiç engellemez (`pointer-events: none`) ve JS olmadan kendiliğinden kaybolur. */
+.acilis {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  place-items: center;
+  pointer-events: none;
+  background: radial-gradient(70% 45% at 50% 42%, rgb(109 74 255 / 0.5), transparent 72%), #0b0a1a;
+  animation: acilis-kapan 0.42s ease 0.6s forwards;
+}
+@media (display-mode: standalone) {
+  .acilis {
+    display: grid;
+  }
+}
+.acilis-marka {
+  display: flex;
+  width: 5rem;
+  height: 5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1.5rem;
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+  background: linear-gradient(120deg, #5f46ff 0%, #8b3dff 58%, #b5359f 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.32),
+    0 24px 60px -16px rgb(124 74 255 / 0.9);
+  animation: acilis-marka 0.6s var(--ease-brand) both;
+}
+@keyframes acilis-marka {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+@keyframes acilis-kapan {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@media print {
+  .panel-modern::before,
+  .acilis {
+    display: none;
+  }
+  /* Kartların çerçevesi gölgeden geliyor; kâğıtta gölge basılmaz. */
+  .panel-modern :is(.surface-card, .rounded-card.border) {
+    border-color: #b4b4b4;
+    box-shadow: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   İNGİLİZCE (2026-11-06) — ders hareketleri. Yalnızca transform ve opacity;
+   "hareketi azalt" açıksa globals.css hepsini anında bitirir.
+   -------------------------------------------------------------------------- */
+@keyframes ing-salla {
+  0%,
+  100% {
+    transform: none;
+  }
+  20%,
+  60% {
+    transform: translateX(-7px);
+  }
+  40%,
+  80% {
+    transform: translateX(7px);
+  }
+}
+.ing-salla {
+  animation: ing-salla 0.42s ease-in-out;
+}
+@keyframes ing-zipla {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.ing-zipla {
+  animation: ing-zipla 0.38s var(--ease-brand);
+}
+@keyframes ing-yuksel {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.ing-yuksel {
+  animation: ing-yuksel 0.28s var(--ease-brand);
+}
+@keyframes ing-belir {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ing-belir {
+  animation: ing-belir 0.22s var(--ease-brand) both;
+}
+@keyframes ing-alev {
+  0%,
+  100% {
+    transform: scale(1) rotate(-3deg);
+  }
+  50% {
+    transform: scale(1.12) rotate(3deg);
+  }
+}
+.ing-alev {
+  transform-origin: 50% 90%;
+  animation: ing-alev 1.6s ease-in-out infinite;
+}
+@keyframes ing-suzul {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.ing-suzul {
+  animation: ing-suzul 3s ease-in-out infinite;
+}
+/* Şu anki dersin halkası: dışa doğru yayılıp söner. */
+@keyframes ing-nabiz {
+  from {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+.ing-nabiz::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--accent);
+  animation: ing-nabiz 1.8s ease-out infinite;
+  z-index: -1;
+}
+/* Maskotun göz kırpması. */
+@keyframes ing-kirp {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+.ing-goz {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ing-kirp 4.5s infinite;
+}
+@keyframes ing-sevin {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  30% {
+    transform: translateY(-14px) rotate(-6deg);
+  }
+  60% {
+    transform: translateY(0) rotate(4deg);
+  }
+}
+.ing-sevin {
+  animation: ing-sevin 0.9s var(--ease-brand) 2;
+}
+/* Bitişte konfeti: her parça `--x`, `--d`, `--r` ile kendi yolunda düşer. */
+@keyframes ing-konfeti {
+  from {
+    transform: translate3d(0, -10vh, 0) rotate(0);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(var(--x), 105vh, 0) rotate(var(--r));
+    opacity: 0.9;
+  }
+}
+.ing-konfeti {
+  position: fixed;
+  top: 0;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 70;
+  animation: ing-konfeti var(--d) cubic-bezier(0.2, 0.6, 0.4, 1) forwards;
+}

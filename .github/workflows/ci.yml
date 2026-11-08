@@ -1,0 +1,1106 @@
+name: CI
+
+# PROGRAM.md §10.5 / §10.6 — "Bir görev şunların hepsi sağlanmadan tamamlandı
+# sayılmaz". Bu dosya o cümleyi otomatik bir kapıya çevirir: `kapi` işi
+# düşerse merge yok.
+#
+# İlgili ADR: ADR-003 (pnpm), ADR-006 (postinstall), ADR-008 (Node 22),
+# ADR-009 (GitHub Actions).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+  # HAFTALIK BAĞIMLILIK DENETİMİ (§8.24) — Pazartesi 06:17 UTC (09:17 TRT).
+  #
+  # NEDEN: advisory'ler BİZİM kodumuz değişmeden yayınlanır. Kapı yalnızca
+  # push/PR'da koşarsa, sessiz geçen bir hafta boyunca yüksek/kritik bir açık
+  # depoda fark edilmeden durur. Nitekim T-005c'deki `nanoid` açığını da bir PR
+  # koşusu değil, tesadüfen tetiklenen bir denetim ortaya çıkardı.
+  #
+  # Dakika BİLEREK :00 değil — tam saat başları GitHub'da en yoğun dilim ve
+  # zamanlanmış koşumlar orada uzun süre kuyrukta bekliyor.
+  #
+  # Zamanlanmış koşumda YALNIZCA `bagimlilik-denetimi` çalışır (aşağıdaki iki
+  # işte `if:` gardı var): haftalık koşumun amacı dış veri kaynağını yoklamak,
+  # değişmemiş kodu yeniden derlemek değil.
+  #
+  # DİKKAT: `schedule` yalnızca VARSAYILAN DALDAN tetiklenir. Bu dosya `main`'e
+  # girene kadar haftalık koşum başlamaz.
+  schedule:
+    - cron: '17 6 * * 1'
+
+# En az yetki: hat yalnızca kodu okur. Hiçbir iş yazma izni istemiyor.
+permissions:
+  contents: read
+
+# Aynı dal için yeni push gelirse eskisini iptal et — koşucu boşa yanmasın.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  # Derleme ve kullanım verisi Vercel'e gitmesin (§8 gizlilik duruşu).
+  NEXT_TELEMETRY_DISABLED: '1'
+  # F0'da kapsam eşiği RAPORLANIR, zorlanmaz. F1 sonunda '1' yapılacak —
+  # tek satır, tek yer. Ayrıntı: vitest.config.ts.
+  COVERAGE_ENFORCE: '1'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # ANA KAPI — §10.6. Adımlar sıralıdır ve ilki düşerse sonrakiler koşmaz.
+  # ---------------------------------------------------------------------------
+  kapi:
+    name: 'Kapı: lint → typecheck → test → build → e2e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Haftalık denetim koşumunda atlanır — kod değişmedi, yeniden ölçmenin
+    # bilgi değeri yok. Gerekçe `on.schedule` bloğunda.
+    if: github.event_name != 'schedule'
+
+    # §9 senaryo 3 ve §8.1 kapısı GERÇEK bir veritabanı ister: giriş akışı
+    # kullanıcı kaydına, 2FA kurulumu `User.totpConfirmedAt`'e bakıyor.
+    #
+    # NEDEN EKLENDİ (T-016/T3 → T-005b): DB olmadan `auth.spec.ts` kendini
+    # atlıyordu ve koşum "19 skipped" ile YEŞİL geçiyordu. Yani dört `code`
+    # regresyon kilidi ve §8.1 kapısı merge kapısında HİÇ TUTMUYORDU —
+    # yalnızca geliştirici makinesinde koşuyorlardı. Yerel bir kilit,
+    # kilit değildir.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: sahinsamet_ci
+        ports:
+          - 5432:5432
+        # Koşucu, sağlık kontrolü geçene kadar adımları başlatmaz.
+        options: >-
+          --health-cmd "pg_isready -U ci -d sahinsamet_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    # CI-YEREL, ATILABİLİR DEĞERLER — hiçbiri gerçek sır değildir.
+    #
+    # ADR-009 ve BULGU-002: derlemenin veritabanına ihtiyacı yok ve GERÇEK
+    # `DATABASE_URL` asla CI secret'ı yapılmaz. Buradaki veritabanı koşumla
+    # birlikte doğup ölen bir servis container'ı; `AUTH_SECRET` ve
+    # `TOTP_ENCRYPTION_KEY` ise yalnızca bu koşumda üretilen jetonları
+    # imzalamak için. Değerler bilerek "ci-test" ibaresi taşıyor ki ileride
+    # biri bunları gerçek bir sır sanmasın.
+    #
+    # `DATABASE_URL` BİLEREK BURADA DEĞİL, yalnızca ihtiyacı olan adımlarda.
+    # Gerekçe "Üretim derlemesi" adımının başında.
+    env:
+      AUTH_SECRET: ci-test-only-auth-secret-not-a-real-value
+      TOTP_ENCRYPTION_KEY: Y2ktdGVzdC1vbmx5LW5vdC1hLXJlYWwta2V5LTAwMDA=
+      ADMIN_EMAIL: ci@ornek.test
+      # §8.2 — `passwordSchema` en az 12 karakter istiyor.
+      ADMIN_PASSWORD: ci-test-parolasi-1234
+      # ─────────────────────────────────────────────────────────────────────
+      # NEXT_PUBLIC_SITE_URL — T-005d, koşum 32386089662'nin düzeltmesi.
+      #
+      # NEDEN GEREKLİ: F2 ile gelen SEO rotaları mutlak adres üretiyor ve
+      # `getSiteUrl` değer yoksa FIRLATIYOR (bilerek: `http://localhost:3000`e
+      # sessizce düşmek, üretimde tüm dünyaya localhost adresleri yayınlardı).
+      # `robots.txt` derleme anında ön-render edildiği için değişken artık
+      # DERLEME adımında da şart:
+      #   Error occurred prerendering page "/robots.txt"
+      #   Error: NEXT_PUBLIC_SITE_URL tanımlı değil…
+      #
+      # NEDEN İŞ DÜZEYİNDE, ADIM DÜZEYİNDE DEĞİL: `DATABASE_URL`in adım
+      # düzeyinde tutulmasının TEK sebebi BULGU-002 nöbeti — "derleme DB'ye
+      # bağımlı olmasın". Site adresi için böyle bir nöbet yok ve olması da
+      # anlamsız: değişkeni derleme (robots.txt), E2E (sitemap / og) ve ölçüm
+      # sunucusu birden istiyor.
+      #
+      # NÖBETİ ZAYIFLATMIYOR: bu bir sır değil, veritabanı bağlantısı hiç
+      # değil. `NEXT_PUBLIC_` öneki zaten "bu değer tarayıcı paketine gömülür"
+      # demek (§8.18). `DATABASE_URL` bu blokta YOK ve olmayacak.
+      #
+      # DEĞER AÇIKÇA SAHTE (T-005b/K4): `.test` RFC 2606 ile ayrılmış, asla
+      # çözümlenmeyen bir TLD; ad "ci-test-only" ibaresi taşıyor. Gerçek alan
+      # adı buraya YAZILMAZ — yazılsaydı CI derlemesinin ürettiği robots.txt
+      # ve sitemap üretim adresleri gösterir, "bu artifact yayına konabilir"
+      # sanısını beslerdi.
+      NEXT_PUBLIC_SITE_URL: https://ci-test-only.ornek.test
+      # Face ID e2e'si (passkey.spec.ts) sanal doğrulayıcıyla `localhost`ta koşar:
+      # WebAuthn IP adresini RP kabul etmiyor. YALNIZCA CI — üretimde tanımlı değil.
+      PASSKEY_TEST_KOKENI: http://localhost:3100
+
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v7
+
+      # pnpm sürümü `package.json` → `packageManager` alanından okunur (ADR-003).
+      # Ayrı bir yere sürüm yazmıyoruz ki sapma ihtimali olmasın.
+      - name: pnpm kur
+        uses: pnpm/action-setup@v6
+
+      # ADR-008 TEK KAYNAĞI: `.nvmrc`. Sürüm burada elle yazılmaz.
+      - name: Node kur (.nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      # ADR-008'in üç ayağının fiilen aynı olduğunu doğrular. Bu adım olmasaydı
+      # `.nvmrc` ile `engines` sessizce ayrışabilir ve "yerelde çalışıyor, CI'da
+      # çalışmıyor" sınıfı hatalar geri gelirdi.
+      - name: Sürüm senkronu (.nvmrc ↔ engines ↔ çalışan Node)
+        run: |
+          node <<'BETIK'
+          const { readFileSync } = require('node:fs');
+
+          const nvmrc = readFileSync('.nvmrc', 'utf8').trim();
+          const engines = require('./package.json').engines.node;
+          const calisan = process.versions.node;
+
+          const nvmrcAna = Number.parseInt(nvmrc.replace(/^v/, ''), 10);
+          const enginesAna = Number.parseInt(engines.replace(/^[^\d]*/, ''), 10);
+          const calisanAna = Number.parseInt(calisan, 10);
+
+          console.log(`.nvmrc=${nvmrc} engines="${engines}" calisan=v${calisan}`);
+
+          const hatalar = [];
+          if (nvmrcAna !== enginesAna) {
+            hatalar.push(`.nvmrc (${nvmrcAna}) ile engines (${enginesAna}) ana sürümü farklı`);
+          }
+          if (calisanAna !== nvmrcAna) {
+            hatalar.push(`Çalışan Node (${calisanAna}) .nvmrc (${nvmrcAna}) ile uyuşmuyor`);
+          }
+          if (hatalar.length > 0) {
+            console.error('ADR-008 ihlali:\n- ' + hatalar.join('\n- '));
+            process.exit(1);
+          }
+          console.log('ADR-008: üç kaynak da uyumlu.');
+          BETIK
+
+      # ADR-006: `postinstall` → `prisma generate` burada kendiliğinden koşar.
+      # Ayrıca `prisma generate` çağırmaya GEREK YOK.
+      #
+      # `.env` YOK ve Postgres servisi YOK — T-003c'den beri zincirin tamamı
+      # bu koşulda geçiyor. Gerçek DATABASE_URL secret'ı BİLEREK verilmiyor:
+      # derlemenin veritabanına ihtiyacı yok (BULGU-002).
+      - name: Bağımlılıkları kur
+        run: pnpm install --frozen-lockfile
+
+      - name: 1/5 · Lint
+        run: pnpm lint
+
+      - name: 2/5 · Typecheck
+        run: pnpm typecheck
+
+      # Kapsam raporu burada üretilir. Eşik (%70) yapılandırılmıştır ancak
+      # COVERAGE_ENFORCE=0 olduğu için şimdilik yalnızca raporlanır.
+      # §8.18'in `.env.example` ve `process.env` katmanları da bu adımda koşar.
+      - name: 3/5 · Birim + bileşen testleri (kapsam)
+        run: pnpm test
+
+      # DİKKAT — bu adımda `DATABASE_URL` BİLEREK TANIMSIZ.
+      #
+      # BULGU-002 tam olarak buydu: derleme veritabanı bağlantısı istiyordu ve
+      # `.env` bulunmayan her ortamda (CI, Docker build katmanı, taze klon)
+      # çöküyordu. T-003c havuzu tembel kuruluma çevirerek düzeltti.
+      #
+      # T-005b veritabanını CI'ya soktu ama `DATABASE_URL`'i İŞ DÜZEYİNE
+      # KOYMADI; yalnızca migrate/seed/e2e adımlarına verdi. Böylece bu adım
+      # o düzeltmenin canlı gerileme testi olmayı SÜRDÜRÜYOR: biri derlemeyi
+      # yeniden DB'ye bağımlı hâle getirirse burası kırmızı olur.
+      #
+      # NÖBET T-005d'DE GERÇEKTEN TUTTU (BULGU-017). Koşum 32386089662'nin
+      # bildirdiği `NEXT_PUBLIC_SITE_URL` hatası ÜSTTEKİ arızaydı; o düzelince
+      # altından ikincisi çıktı:
+      #   Error occurred prerendering page "/sitemap.xml"
+      #   Error: DATABASE_URL tanımlı değil…
+      # `sitemap.xml` veri okuyordu ama dinamik işaretlenmemişti, yani
+      # derleme anında ön-render ediliyor → derleme yeniden veritabanına bağımlı.
+      # Yani bu adım sentetik bir mutasyonla değil, GERÇEK bir gerilemeyle
+      # kanıtlandı. Düzeltme `src/**` tarafında (Backend); bu adıma
+      # `DATABASE_URL` VERİLEREK susturulmaz — susturmak nöbeti bitirirdi.
+      - name: 4/5 · Üretim derlemesi (DATABASE_URL OLMADAN — BULGU-002 nöbeti)
+        run: pnpm build
+
+      # §8.18'in ÜÇÜNCÜ katmanı: derleme çıktısında sır var mı?
+      # Aynı test dosyası `test` adımında derleme yokken ilgili blokları
+      # atlamıştı; `.next/` artık var olduğu için burada gerçekten tarar.
+      - name: 5/5 · §8.18 — derleme çıktısında gizli bilgi taraması
+        run: pnpm exec vitest run tests/unit/public-env.test.ts
+
+      # --- Veritabanı hazırlığı — buradan sonrası DATABASE_URL ister ---------
+      #
+      # `prisma migrate dev` DEĞİL `deploy`: `dev` etkileşimlidir, eksik
+      # migration üretmeye kalkar ve gerektiğinde veritabanını SIFIRLAR.
+      # CI'da istenen, var olan migration zincirini olduğu gibi uygulamaktır.
+      # `pnpm db:migrate` script'i `dev` çalıştırdığı için bilerek
+      # kullanılmadı — `package.json` bu görevin kapsamı dışında ve yeni
+      # script talep etmeye değmiyor.
+      - name: DB şeması (prisma migrate deploy)
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm exec prisma migrate deploy
+
+      # Şemada olup göçü unutulan sütun, taklitli testleri geçer ve kapsanmayan rotada canlıda
+      # 500 verir. Göç zinciri şemayla birebir aynı olmalı.
+      - name: Göç ve şema aynı mı (prisma migrate diff)
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      # İşlem geri alma, eşsizlik kısıtı ve eşzamanlılık yalnızca gerçek Postgres'te ölçülür.
+      - name: Gerçek veritabanı testleri (para ve sayaç)
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm test:integration
+
+      # Seed yönetici hesabını açar; `auth.spec.ts` onunla giriş yapıyor.
+      # 2FA'yı KAPALI bırakır (T-013b, bilinçli) — §8.1 kapısının test ettiği
+      # başlangıç durumu tam olarak budur.
+      - name: Seed (yönetici hesabı)
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm db:seed
+
+      # Yedek alınır, boş veritabanına açılır, tablo tablo karşılaştırılır.
+      - name: Yedekten geri dönüş provası
+        env:
+          PG_ARAC: docker run --rm -i --network host -e PGHOST=localhost -e PGPASSWORD=ci postgres:16-alpine
+          PG_KULLANICI: ci
+          PG_VERITABANI: sahinsamet_ci
+        run: bash scripts/geri-donus-provasi.sh
+
+      - name: Playwright tarayıcı önbelleği
+        uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Playwright tarayıcılarını kur
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `playwright.config.ts` CI'da yeniden derlemez; yukarıdaki derleme
+      # adımının çıktısını kullanır. Yani `build` düşerse E2E hiç koşmaz.
+      #
+      # `DATABASE_URL` burada ŞART: hem `globalSetup` (test verisi hazırlığı)
+      # hem de ölçüm sunucusuyla ayağa kalkan uygulama ona bakıyor.
+      - name: E2E (masaüstü + mobil, auth paketi dahil)
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm test:e2e
+
+      # Auth paketinin GERÇEKTEN koştuğunu doğrular.
+      #
+      # NEDEN AYRI BİR ADIM: Playwright, atlanan testler için sıfır olmayan bir
+      # çıkış kodu ÜRETMEZ. Veritabanı bir gün sessizce erişilemez hâle gelirse
+      # `auth.spec.ts` kendini atlar, koşum yine YEŞİL olur ve §8.1 kapısıyla
+      # dört `code` kilidi farkında olmadan devre dışı kalır — T-005b'nin
+      # çözdüğü sorunun aynısı geri gelir. Bu adım o sessiz gerilemeyi
+      # gürültülü bir hataya çevirir.
+      - name: Atlanan test yok (auth paketi koştu mu?)
+        run: |
+          node <<'BETIK'
+          const { readFileSync } = require('node:fs');
+          const rapor = JSON.parse(readFileSync('playwright-sonuc.json', 'utf8'));
+
+          const atlanan = rapor.stats?.skipped ?? 0;
+          const gecen = rapor.stats?.expected ?? 0;
+          const titrek = rapor.stats?.flaky ?? 0;
+          console.log(`geçen=${gecen} atlanan=${atlanan} titrek=${titrek}`);
+
+          // Spec'ler silinirse ya da koşmazsa da yeşil kalmasın (2026-11-02: 165'ti).
+          if (gecen < 150) {
+            console.error(`Yalnızca ${gecen} e2e testi geçti; en az 150 bekleniyor.`);
+            process.exit(1);
+          }
+          // Titrek test yeniden denemede yeşile dönüyor: gizlenmesin, koşumda görünsün.
+          if (titrek > 0) console.log(`::warning::${titrek} e2e testi yeniden denemede geçti.`);
+
+          if (atlanan > 0) {
+            console.error(
+              `${atlanan} test ATLANDI. Auth paketi veritabanı yoksa kendini atlar; ` +
+                'bu koşum §8.1 kapısını ve `code` regresyon kilitlerini DOĞRULAMAMIŞTIR.',
+            );
+            process.exit(1);
+          }
+          BETIK
+
+      - name: Kapsam raporunu sakla
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kapsam-raporu
+          path: coverage/
+          retention-days: 14
+
+      - name: Playwright raporunu sakla
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-raporu
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # §8.24 — "npm audit yüksek/kritik açıkla merge yok".
+  # Ayrı iş: kapıdan bağımsız ve hızlı geri bildirim verir, ama düşerse
+  # yine merge engellenir (dal koruması her iki işi de zorunlu sayar).
+  # ---------------------------------------------------------------------------
+  bagimlilik-denetimi:
+    name: §8.24 · Bağımlılık denetimi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Bağımlılıkları kur
+        run: pnpm install --frozen-lockfile
+
+      # ADR-003 gereği `npm audit` değil `pnpm audit`. `--audit-level high`
+      # yüksek VE kritik seviyeyi kapsar; bulgu varsa çıkış kodu sıfır değildir.
+      #
+      # KAPI ARTIK BİR BETİKTEN GEÇİYOR — tek sebebi ADVISORY-002 (T-005d).
+      # Oyunkitabının D katmanı ("bekle + kaydet") SÜRELİ bir istisna istiyor;
+      # `pnpm audit`in kendi susturma mekanizması (`pnpm.auditConfig`) ise
+      # SÜRESİZDİR: bir kez yazılır, kimse bir daha bakmaz ve ölü bir istisna
+      # bir gün yaşayan bir açığı maskeler (oyunkitabı §4'ün override'lar için
+      # söylediğinin aynısı). Aşağıdaki liste bunun tersini yapar — istisna
+      # kendi son kullanma tarihini taşır, tarih geçince KAPI KIRMIZI OLUR.
+      #
+      # Üç ayrı biçimde kırılır ve üçü de bilinçli:
+      #   1. Listede olmayan yüksek/kritik advisory  → kapı kırmızı (eski davranış)
+      #   2. Süresi dolmuş istisna                   → kapı kırmızı (unutulamaz)
+      #   3. Artık bildirilmeyen istisna             → kapı kırmızı (ölü satır silinsin)
+      #   4. Advisory'nin YOLU değişmiş              → kapı kırmızı (maruziyet
+      #      ölçümü o yola dayanıyordu; yol değiştiyse ölçüm de geçersiz)
+      - name: pnpm audit (yüksek + kritik) — süreli istisnalarla
+        run: |
+          # `|| true`: audit bulgu varsa sıfır olmayan kod döner; kararı
+          # aşağıdaki betik verir. Depoya dosya bırakmamak için çıktı
+          # `$RUNNER_TEMP` altına yazılıyor.
+          pnpm audit --audit-level high --json > "$RUNNER_TEMP/denetim.json" || true
+
+          node <<'BETIK'
+          const { readFileSync } = require('node:fs');
+          const path = require('node:path');
+
+          /**
+           * SÜRELİ İSTİSNALAR — her satırın karşılığı `docs/security/README.md`
+           * içinde bir ADVISORY-NNN kaydıdır. Kayıtsız satır yazılmaz.
+           */
+          const ISTISNALAR = [
+            /*
+             * ADVISORY-002 (GHSA-ggr8-5vv4-36mx, deepmerge-ts) BURADAN KALDIRILDI
+             * — T-054g'de KATMAN B ile ÇÖZÜLDÜ, süresi dolmadan 42 gün önce.
+             *
+             * Eski gerekçe şuydu: "üst paket sürümü TAM SABİTLİYOR, override
+             * açık sözleşmeyi çiğnerdi". Bu bir ÇIKARIMDI, ölçüm değil — pin'in
+             * varlığından uyumsuzluk SONUCU çıkarılmıştı. T-054g'de ölçüldü:
+             * `pnpm.overrides` ile `deepmerge-ts@8.0.2` zorlandığında
+             * `@prisma/config` çalışmaya devam ediyor (validate · generate ·
+             * migrate status · db execute, hepsi config yükleyerek geçti) ve
+             * yükleyicinin O KOPYAYI kullandığı kopyayı bozup CLI'nin düşmesiyle
+             * KESİN olarak doğrulandı.
+             *
+             * Dersin adı: ÖLÇÜLMEMİŞ GEREKÇE. Zamanlı istisna doğru aracı ama
+             * dayandığı önerme sınanmadığı sürece istisna, gereksiz de olabilir.
+             * Tam ölçüm zinciri docs/security/README.md → ADVISORY-002.
+             */
+            /*
+             * ADVISORY-006 (GHSA-vfj7-8cjw-p6xm, braces) BURADAN KALDIRILDI —
+             * 2026-10-25'te `pnpm audit` uyarıyı ARTIK BİLDİRMİYOR (zincir ve
+             * braces@3.0.3 aynı; uyarı muhtemelen geri çekilmiş). Kapı satırı
+             * "istisna GEREKSİZ" diyerek kendisi sildirdi. Kayıt:
+             * docs/security/README.md → ADVISORY-006 KAPANDI.
+             */
+          ];
+
+          const raporYolu = path.join(process.env.RUNNER_TEMP, 'denetim.json');
+          let rapor;
+          try {
+            rapor = JSON.parse(readFileSync(raporYolu, 'utf8'));
+          } catch (e) {
+            // Ayrıştırılamayan çıktı YUTULMAZ: `pnpm audit` ağ hatası ya da
+            // kayıt sunucusu arızası yüzünden boş dönmüş olabilir ve o hâlde
+            // "bulgu yok" sonucu ölçüm değil, ölçüm YOKLUĞUDUR.
+            console.error(`Denetim çıktısı okunamadı (${raporYolu}): ${e.message}`);
+            process.exit(1);
+          }
+
+          const advisories = Object.values(rapor.advisories ?? {});
+          for (const a of advisories) {
+            console.log(
+              `${a.github_advisory_id} · ${a.severity} · ${a.module_name}@` +
+                `${a.findings?.[0]?.version} · yama ${a.patched_versions} · ${a.url ?? ''}`,
+            );
+          }
+          const bugun = new Date().toISOString().slice(0, 10);
+
+          const hatalar = [];
+          const kullanilan = new Set();
+
+          for (const a of advisories) {
+            if (a.severity !== 'high' && a.severity !== 'critical') continue;
+
+            const ghsa = a.github_advisory_id;
+            const istisna = ISTISNALAR.find((i) => i.ghsa === ghsa);
+
+            if (!istisna) {
+              hatalar.push(
+                `${ghsa} (${a.severity}, ${a.module_name}) — istisna YOK. ` +
+                  'Oyunkitabı: docs/security/README.md → "Oyunkitabı".',
+              );
+              continue;
+            }
+
+            kullanilan.add(ghsa);
+
+            if (bugun > istisna.bitis) {
+              hatalar.push(
+                `${ghsa} — istisnanın SÜRESİ DOLDU (${istisna.bitis}, bugün ${bugun}). ` +
+                  `${istisna.kayit} yeniden değerlendirilmeli: üst paket yamalı ` +
+                  'sürümü getirdiyse istisna silinir, getirmediyse süre GEREKÇEYLE uzatılır.',
+              );
+              continue;
+            }
+
+            if (a.module_name !== istisna.paket) {
+              hatalar.push(`${ghsa} — beklenen paket ${istisna.paket}, gelen ${a.module_name}.`);
+              continue;
+            }
+
+            const yollar = (a.findings ?? []).flatMap((f) => f.paths ?? []);
+            const sapan = yollar.filter((y) => !y.includes(istisna.yolIcermeli));
+            if (sapan.length > 0) {
+              hatalar.push(
+                `${ghsa} — YENİ YOL(LAR) belirdi; ${istisna.kayit}'nin maruziyet ` +
+                  `ölçümü "${istisna.yolIcermeli}" yoluna dayanıyordu:\n    ` +
+                  sapan.join('\n    '),
+              );
+              continue;
+            }
+
+            const kalan = Math.ceil(
+              (Date.parse(istisna.bitis) - Date.parse(bugun)) / 86400000,
+            );
+            console.log(
+              `⏳ ${ghsa} (${a.module_name}@${a.findings?.[0]?.version}) — ` +
+                `${istisna.kayit} kapsamında SÜRELİ istisna, ${kalan} gün kaldı ` +
+                `(bitiş ${istisna.bitis}). ${yollar.length} yolun hepsi beklenen zincirde.`,
+            );
+          }
+
+          // Ölü satır avı: bildirilmeyen bir istisna, silinmesi gereken bir
+          // satırdır. Sessizce dursaydı bir sonraki gözden geçirmede "bu neden
+          // burada?" sorusuna kimse cevap veremezdi.
+          for (const i of ISTISNALAR) {
+            if (!kullanilan.has(i.ghsa)) {
+              hatalar.push(
+                `${i.ghsa} artık bildirilmiyor — ${i.kayit} istisnası GEREKSİZ. ` +
+                  'Bu satırı ve kaydı kapatın (üst paket muhtemelen yamayı getirdi).',
+              );
+            }
+          }
+
+          if (hatalar.length > 0) {
+            console.error('\n§8.24 KAPISI KIRMIZI:\n- ' + hatalar.join('\n- '));
+            process.exit(1);
+          }
+
+          const toplam = advisories.filter(
+            (a) => a.severity === 'high' || a.severity === 'critical',
+          ).length;
+          console.log(
+            `\n§8.24 geçti — ${toplam} yüksek/kritik advisory, hepsi süreli ve kayıtlı istisna.`,
+          );
+          BETIK
+
+      # Kırmızı olduğunda NE OLUR — özellikle haftalık koşumda.
+      #
+      # Zamanlanmış koşum bir PR'a bağlı değildir; kimse "checks" sekmesine
+      # bakmaz. GitHub, varsayılan dalda düşen zamanlanmış iş akışları için depo
+      # sahibine bildirim gönderir; bu adım da arızayı koşum ÖZETİNE yazar, yani
+      # bildirime tıklayan kişi ham log kazmadan ne yapacağını görür.
+      #
+      # `if: failure()` — yalnızca denetim düştüğünde koşar.
+      #
+      # Otomatik ISSUE AÇILMIYOR: bunun için iş akışına `issues: write` vermek
+      # gerekirdi ve hat şu an salt okunur (`permissions: contents: read`).
+      # En az yetki duruşunu haftalık bir kolaylık için gevşetmek yanlış olurdu;
+      # istenirse ayrı bir karar olarak açılmalı.
+      - name: Denetim düştü — ne yapılacak
+        if: failure()
+        run: |
+          {
+            echo '## §8.24 — bağımlılık denetimi KIRMIZI'
+            echo
+            if [ "${{ github.event_name }}" = 'schedule' ]; then
+              echo 'Bu bir **haftalık** koşum: kod değişmedi, yeni bir advisory yayınlandı.'
+            else
+              echo 'Bu koşum bir push/PR tetiklemesi.'
+            fi
+            echo
+            echo 'Oyunkitabı: `docs/security/README.md` → "Oyunkitabı — geçişli'
+            echo 'bağımlılıkta yüksek/kritik advisory". Sırasıyla: maruziyeti ölç →'
+            echo 'katmanı seç (kilit tazeleme / override / üst paketi yükselt / bekle) →'
+            echo '`pnpm why` ile TÜM yolları doğrula → kaldırma koşuluyla kaydet.'
+            echo
+            echo 'Adımın kendi çıktısı hangi dalda düştüğünü söyler: istisnası olmayan'
+            echo 'yeni bir advisory mi, süresi dolmuş bir istisna mı (ADVISORY-NNN'
+            echo 'yeniden değerlendirilmeli), gereksizleşmiş bir istisna mı (satır'
+            echo 'silinmeli), yoksa beklenmedik bir bağımlılık yolu mu.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Kilit dosyası ile package.json ayrışmışsa `--frozen-lockfile` zaten
+      # düşer; bu adım niyeti açık kılar ve ADR-003'ün diğer paket
+      # yöneticilerini yasaklamasını uygular.
+      # ═══════════════════════════════════════════════════════════════════════
+      # OVERRIDE TAZELİĞİ — "donmuş taban" nöbeti (T-051)
+      # ═══════════════════════════════════════════════════════════════════════
+      #
+      # ÖLÇÜLMÜŞ ARIZA: sınırlı bir override, alt sınırında KALICI OLARAK
+      # donuyor. `">=0.35.4 <0.36.0"` yazıp kilidi 0.35.4'te bırakmak kısıtı
+      # sağlıyor, dolayısıyla pnpm'in yeniden çözmek için sebebi olmuyor — ve
+      # o aralıkta yayımlanan her yeni danışma elle yükseltme gerektiriyor.
+      # Hiçbir şey uyarmıyor; §8.24 kırmızıya dönene kadar. T-051'de dördüncü
+      # kez bu yüzden kırmızıya döndü ve kontrol ilk koşumunda `mysql2`yi
+      # 3.24.4'te donmuş yakaladı (aralıkta 3.24.5 vardı).
+      #
+      # NEDEN YALNIZCA HAFTALIK KOŞUMDA (`if: schedule`):
+      # Her PR'da koşsaydı, üst paketin yayımladığı HER yama sürümü ilgisiz bir
+      # PR'ı kırmızıya çevirirdi — "haksız düşen kapı", güvenilirliği aşındıran
+      # tam o sınıf. Haftalık koşum ise zaten kimsenin PR'ını bloke etmiyor ve
+      # düştüğünde GitHub depo sahibine bildirim gönderiyor (§8.24'ün
+      # `schedule` gerekçesi). Yani sinyal, bakılması gereken yere düşüyor.
+      #
+      # NEDEN BİR BİRİM TESTİ DEĞİL: cevabı yalnızca kayıt sunucusu biliyor
+      # (aralıkta en yeni sürüm hangisi). Ağ isteği atan bir birim testi,
+      # çevrimdışı koşumda sessizce yeşil kalırdı.
+      - name: Override tazeliği (haftalık — donmuş taban var mı?)
+        if: github.event_name == 'schedule'
+        run: |
+          node <<'BETIK'
+          const { execFileSync } = require('node:child_process');
+          const { appendFileSync, readFileSync } = require('node:fs');
+
+          const overrides = JSON.parse(readFileSync('package.json', 'utf8')).pnpm?.overrides ?? {};
+          const girdiler = Object.entries(overrides);
+
+          if (girdiler.length === 0) {
+            console.log('Override yok — kontrol edilecek taban da yok.');
+            process.exit(0);
+          }
+
+          /** Kilitte çözülen en yüksek sürüm. `pnpm why` çıktısından okunur. */
+          const cozulen = (paket) => {
+            const cikti = execFileSync('pnpm', ['why', paket], { encoding: 'utf8' });
+            /*
+               AD SINIRI ŞART: `postcss` desenini sınırsız aramak
+               `@tailwindcss/postcss 4.3.3` satırını da yakalıyordu ve paket
+               iki farklı sürümde görünüyordu. Ölçüldü — bu kontrol gerçek
+               ağaçta ilk koşumunda tam bu yüzden "ölçülemedi" dedi. Geriye
+               bakış kapsamı (negative lookbehind) ad başını gerçek bir sınıra
+               bağlıyor: `/`, `@`, harf veya tire ile BİTİŞİK bir eşleşme artık
+               sayılmıyor.
+            */
+            const surumler = [
+              ...cikti.matchAll(new RegExp(`(?<![\\w/@.-])${paket} (\\d+\\.\\d+\\.\\d+)`, 'g')),
+            ].map((m) => m[1]);
+            /*
+               ÇOK HATLI PAKETTE MAX ALMAK YANILTIR: ağaçta iki majör hat
+               varsa (ör. `brace-expansion` 1.x ve 5.x) en yükseği alıp
+               aralığın en yenisiyle karşılaştırmak sahte "donmuş" üretir.
+               Bir override normalde hatları TEK sürüme indirger; indirgemiyorsa
+               sorun karşılaştırmada değil override'ın kendisindedir. Bu yüzden
+               tek sürüm beklenir ve beklenti bozulursa `null` dönüp
+               "ölçülemedi" kovasına düşülür — sessiz yanlış teşhis yerine
+               gürültülü belirsizlik.
+            */
+            const tekil = [...new Set(surumler)];
+            return tekil.length === 1 ? tekil[0] : null;
+          };
+
+          /** Kayıt sunucusuna ARALIĞI çözdürüyoruz — kendi semver ayrıştırıcımızı
+              yazmak, kurala uymayan bir kenar durumda sessizce yanlış cevap
+              verirdi. `npm view "<paket>@<aralık>" version` en yüksek eşleşeni
+              basar; bu iş için tam olarak doğru araç. */
+          const aralikEnYeni = (paket, aralik) => {
+            const cikti = execFileSync('npm', ['view', `${paket}@${aralik}`, 'version'], {
+              encoding: 'utf8',
+            });
+            const bulunan = [...cikti.matchAll(/(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+            return [...new Set(bulunan)].sort(karsilastir).at(-1) ?? null;
+          };
+
+          function karsilastir(a, b) {
+            const pa = a.split('.').map(Number);
+            const pb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i += 1) {
+              if (pa[i] !== pb[i]) return pa[i] - pb[i];
+            }
+            return 0;
+          }
+
+          const satirlar = [];
+          const donmus = [];
+          /*
+             "ÖLÇÜM YAPILAMADI" ile "TAZE" AYRI HÂLLER (BULGU-013 dersi).
+             Kayıt sunucusu erişilemezse ya da `pnpm why` çıktısı beklenen
+             biçimi kaybederse sonuç `null` gelir; bunu "donmuş" saymak yanlış
+             teşhis, "taze" saymak ise sahte yeşil olurdu. Üçüncü bir kova
+             tutuluyor ve o da kapıyı düşürüyor — ama mesajı farklı.
+          */
+          const olculemedi = [];
+
+          for (const [paket, aralik] of girdiler) {
+            let kilit = null;
+            let enYeni = null;
+            try {
+              kilit = cozulen(paket);
+              enYeni = aralikEnYeni(paket, aralik);
+            } catch (e) {
+              // Ölçüm YAPILAMADI ile "taze" KARIŞTIRILMAZ (BULGU-013 dersi).
+              olculemedi.push(`${paket}: ${e.message.split('\n')[0]}`);
+              satirlar.push(`| \`${paket}\` | \`${aralik}\` | ? | ? | ⚠️ ölçülemedi |`);
+              continue;
+            }
+
+            if (kilit === null || enYeni === null) {
+              olculemedi.push(
+                `${paket}: sürüm okunamadı (kilit=${kilit ?? 'yok'}, kayıt=${enYeni ?? 'yok'})`,
+              );
+              satirlar.push(
+                `| \`${paket}\` | \`${aralik}\` | ${kilit ?? '—'} | ${enYeni ?? '—'} | ⚠️ ÖLÇÜLEMEDİ |`,
+              );
+              continue;
+            }
+
+            const taze = kilit === enYeni;
+            satirlar.push(
+              `| \`${paket}\` | \`${aralik}\` | ${kilit} | ${enYeni} | ${taze ? '✅ taze' : '❄️ DONMUŞ'} |`,
+            );
+            if (!taze) donmus.push(`${paket}: kilit ${kilit}, aralıkta en yeni ${enYeni}`);
+          }
+
+          const ozet = [
+            '## Override tazeliği (haftalık)',
+            '',
+            '| Paket | Aralık | Kilitte | Aralıkta en yeni | Durum |',
+            '| ----- | ------ | ------- | ---------------- | ----- |',
+            ...satirlar,
+            '',
+          ];
+
+          if (olculemedi.length > 0) {
+            ozet.push(
+              `**${olculemedi.length} override ÖLÇÜLEMEDİ** — bu "taze" demek değil:`,
+              ...olculemedi.map((d) => `- ${d}`),
+              '',
+              'Sebebi ağ/kayıt sunucusu ya da `pnpm why` çıktı biçiminin değişmesi olabilir.',
+              '',
+            );
+          }
+
+          if (donmus.length > 0) {
+            ozet.push(
+              `**${donmus.length} override tabanında donmuş:**`,
+              ...donmus.map((d) => `- ${d}`),
+              '',
+              'Düzeltme iki yoldan biri (oyunkitabı §4):',
+              '1. `pnpm update <paket> --depth Infinity` → kilit aralığın en yenisine çıkar.',
+              '2. Override ÖLÜ ise (üst paketin aralığı yamalı sürümü zaten kapsıyor) **satırı sil** —',
+              '   T-051: `sharp` ve `nanoid` böyle çıktı, silinince katman A kendiliğinden çalıştı.',
+            );
+          } else {
+            ozet.push('Tüm override tabanları aralığın en yenisinde.');
+          }
+
+          const metin = ozet.join('\n');
+          console.log(metin);
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, metin + '\n');
+          }
+
+          if (donmus.length > 0 || olculemedi.length > 0) process.exit(1);
+          BETIK
+
+      - name: Yabancı kilit dosyası yok (ADR-003)
+        run: |
+          for dosya in package-lock.json yarn.lock npm-shrinkwrap.json; do
+            if [ -f "$dosya" ]; then
+              echo "ADR-003 ihlali: $dosya depoda bulunmamalı."
+              exit 1
+            fi
+          done
+          echo "Yalnızca pnpm-lock.yaml var."
+
+  # ---------------------------------------------------------------------------
+  # §9 — Lighthouse eşikleri. **T-029'DAN İTİBAREN MERGE KAPISI** ("error").
+  #
+  # F0-F2 boyunca "warn"di: ölçülen sayfa T-002'nin geçici doğrulama sayfasıydı,
+  # gerçek eşikleri zorlamak anlamsız bir kırmızı üretirdi. T-021 gerçek ana
+  # sayfayı, T-029b kararlı ölçüm sunucusunu, T-029c veri kurulumunu getirdi;
+  # eşikler artık ölçülen şeyi ölçüyor.
+  #
+  # EŞİKLER TEK YERDE: `lighthouserc.json`. T-029'da masaüstü profili için
+  # ayrı bir tavan (0.55) türetiliyordu; T-020c BULGU-018'i kapatınca profil
+  # gerçek koşucuda 100 ölçtü ve türetme T-029e'de KALDIRILDI — üç profil de
+  # aynı eşikleri kullanıyor.
+  #
+  # ⚠️ ADR-030 — SEED ÖLÇÜM SÖZLEŞMESİDİR. Eşikler sertleştiği için, seed
+  # verisini büyüten her görev bu işi kırabilir: ölçülen sayfanın içeriği
+  # seed'den geliyor. Bu BOZUK BİR KAPI DEĞİL, GERÇEK BİLGİ — sayfa gerçekten
+  # ağırlaşmıştır. Seed büyüten görev Lighthouse'u yeniden ölçüp raporlamak
+  # zorundadır (docs/security/README.md → "ADR-030 ve eşikler").
+  # ---------------------------------------------------------------------------
+  lighthouse:
+    name: §9 · Lighthouse (merge kapısı — eşikler "error")
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: kapi
+    if: github.event_name != 'schedule'
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # BULGU-013 — ÖLÇÜM İŞİ DE VERİYE BAĞIMLI HÂLE GELDİ
+    # ═══════════════════════════════════════════════════════════════════════
+    #
+    # ADR-026 ana sayfayı fixture'dan gerçek servislere bağladı. `getProfile`
+    # profil kaydını bulamazsa FIRLATIR (ADR-017: profil tekil ve seed ile
+    # açılıyor; yokluğu boş durum değil, kurulum hatası). Bu iş AYRI BİR
+    # KOŞUCUDA çalışıyor ve `services:` bloğu yoktu — Postgres yok, seed yok:
+    #
+    #   koşum 31814208273 → "Status code: 500" → ERRORED_DOCUMENT_REQUEST
+    #   → üç profil de düştü, artifact üretilmedi.
+    #
+    # `kapi` işinde veritabanı vardı (T-005b) ama işler ayrı koşucularda;
+    # servis container'ı işler arasında paylaşılmaz.
+    #
+    # NEDEN KENDİ VERİTABANI, `kapi` İLE BİRLEŞTİRME DEĞİL:
+    # Bağımlılık DERLEME zamanında değil İSTEK zamanında. Kök layout `cookies()`
+    # okuduğu için `/` dinamik render ediliyor; derleme `DATABASE_URL` olmadan
+    # geçiyor (aşağıdaki adım hâlâ BULGU-002 nöbeti), 500 ölçüm anında çıkıyor.
+    # Yani `kapi`'den `.next` artifact'i devretmek bu bulguyu ÇÖZMEZ — artifact
+    # `.next` taşır, ayakta bir Postgres taşımaz. Birleştirme ise ~5 dakikalık,
+    # doğası gereği gürültülü bir performans ölçümünü zorunlu doğruluk kapısının
+    # içine sokardı: T-005b'de bağımlılık denetimi için kaçınılan sinyal
+    # kirlenmesinin aynısı. Kurulumun tekrarı, o kirlenmenin yanında ucuz.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: sahinsamet_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d sahinsamet_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    # CI-YEREL, ATILABİLİR DEĞERLER — `kapi` ile birebir aynı, hiçbiri gerçek
+    # sır değil. Seed bunları ŞART koşuyor: `ADMIN_EMAIL` tanımsızsa
+    # `prisma/seed.ts` "ADMIN_EMAIL tanımlı değil (§12)" diye fırlatıyor
+    # (yerelde ölçüldü). `DATABASE_URL` BİLEREK BURADA DEĞİL — gerekçe
+    # "Üretim derlemesi" adımının başında.
+    env:
+      AUTH_SECRET: ci-test-only-auth-secret-not-a-real-value
+      TOTP_ENCRYPTION_KEY: Y2ktdGVzdC1vbmx5LW5vdC1hLXJlYWwta2V5LTAwMDA=
+      ADMIN_EMAIL: ci@ornek.test
+      ADMIN_PASSWORD: ci-test-parolasi-1234
+      # `kapi` ile AYNI DEĞER — gerekçenin tamamı orada. Bu iş de `pnpm build`
+      # koşuyor, yani `robots.txt` ön-render'ı buradaki derlemede de var:
+      # değişken olmadan bu iş `kapi` ile birebir aynı hatayla düşerdi.
+      # T-029c'de eklenen DB kurulumu bu arızayı KARŞILAMAZ — eksik olan
+      # veritabanı değil, mutlak adres.
+      NEXT_PUBLIC_SITE_URL: https://ci-test-only.ornek.test
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Bağımlılıkları kur
+        run: pnpm install --frozen-lockfile
+
+      # WEBGL ÖLÇÜMÜ KALDIRILDI (ADR-045, 2026-10-21): public sitede WebGL yok —
+      # Aurora ve tüm React Bits bileşenleri tasarım yenilemesinde çıktı, `ogl`
+      # bağımlılığı silindi. Koşucunun çizim gücü sondası ve "WebGL gerçekten
+      # koştu mu" doğrulaması yalnızca o yolu ölçmek için vardı (T-029e/BULGU-018).
+      # §5.2.2 ("sayfa başına en fazla 1 WebGL") artık yapısal olarak sağlanıyor.
+      # WebGL geri gelirse ikisi git geçmişinden (T-029e) geri alınmalı.
+
+      # `DATABASE_URL` BURADA DA BİLEREK TANIMSIZ — `kapi`'deki nöbetin ikizi
+      # (BULGU-002). Ana sayfa veriye bağlandıktan SONRA da derlemenin
+      # veritabanısız geçmesi gerekiyor; kök layout `cookies()` okuduğu için `/`
+      # istek zamanında render ediliyor ve derlemede hiçbir sorgu koşmuyor.
+      # Biri sayfayı statik prerender'a çevirirse burası kırmızı olur — istenen
+      # tam olarak budur, çünkü o değişiklik derlemeyi sessizce DB'ye bağlar.
+      - name: Üretim derlemesi (DATABASE_URL OLMADAN — BULGU-002 nöbeti)
+        run: pnpm build
+
+      # --- Veritabanı hazırlığı — buradan sonrası DATABASE_URL ister ---------
+      #
+      # SIRA ÖNEMLİ: seed, ölçüm sunucusu başlamadan ÖNCE bitmiş olmalı.
+      # LHCI sunucuyu `startServerCommand` ile kendisi başlatıyor ve sunucu
+      # ilk isteği karşılarken `getProfile` profil kaydını arıyor. Seed
+      # sonraya kalsaydı ilk koşu yine 500 görürdü.
+      #
+      # `migrate dev` DEĞİL `deploy` — `dev` etkileşimlidir ve gerektiğinde
+      # veritabanını SIFIRLAR. Gerekçenin tamamı `kapi`'deki ikizinde.
+      - name: DB şeması (prisma migrate deploy)
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm exec prisma migrate deploy
+
+      # Ölçülen sayfanın (`/`) verisi buradan geliyor: yer tutucu profil.
+      - name: Seed (ölçülen sayfanın verisi)
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm db:seed
+
+      # Ölçüm başlamadan önce sayfanın GERÇEKTEN 200 döndüğünü doğrular.
+      #
+      # NEDEN AYRI ADIM: LHCI 500'ü `ERRORED_DOCUMENT_REQUEST` diye, üç ekran
+      # dolusu LHR JSON'unun ortasında bildiriyor — BULGU-013'te sebebi
+      # görmek için ham log kazmak gerekti. Bu adım aynı arızayı tek satırda
+      # ve doğru yerde gösterir: veri kurulumu bozuksa ölçüme hiç girilmez.
+      - name: Ölçüm ön koşulu — `/` 200 dönüyor mu?
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: |
+          PORT=3100 node tests/olcum-sunucusu.mjs > /tmp/onkosul.log 2>&1 &
+          for i in $(seq 1 40); do
+            curl -sf -o /dev/null http://127.0.0.1:3100/panel && break
+            sleep 1
+          done
+          KOD=$(curl -s -o /tmp/onkosul.html -w '%{http_code}' http://127.0.0.1:3100/)
+          pkill -f "olcum-sunucusu" || true
+          echo "GET / → HTTP $KOD"
+          if [ "$KOD" != "200" ]; then
+            echo "Ölçülecek sayfa $KOD dönüyor; Lighthouse bunu denetlemeyi reddeder."
+            echo '--- sunucu logu ---'
+            tail -40 /tmp/onkosul.log
+            exit 1
+          fi
+
+      # `@lhci/cli` BİLEREK package.json'a eklenmedi: yalnızca CI'da kullanılan
+      # bir araç, uygulamanın bağımlılığı değil. Sürüm sabitlenmiştir —
+      # `latest` kullanmak her koşuda denetlenmemiş kod indirmek olurdu (§8.25).
+      #
+      # `PORT` artık BURADA VERİLMİYOR — `lighthouserc.json` içindeki
+      # `startServerCommand` kendi portunu taşıyor. Önceden port yalnızca bu
+      # `env:` bloğunda vardı ve yapılandırma yerelde çalışmıyordu (T-002b).
+      #
+      # `DATABASE_URL` üç ölçüm adımının HEPSİNDE şart: LHCI sunucuyu
+      # `startServerCommand` ile kendi alt sürecinde başlatıyor ve o süreç
+      # ortamı bu adımdan miras alıyor. Adımlardan birinde unutulursa yalnızca
+      # o profil 500 görür — diğerleri yeşil kalır ve arıza tek profile
+      # gizlenir.
+      #
+      # ⚠️ `continue-on-error: true` — KAPI GEVŞEMİYOR, aşağıdaki "§9 KAPISI"
+      # adımı üç profilin sonucunu toplayıp işi düşürüyor. Gerekçe: eşikler
+      # "error" olduğu andan itibaren ilk düşen profil adımı sonlandırır ve
+      # ARKASINDAKİ HER ŞEY atlanırdı — diğer iki profil hiç ölçülmez, üç
+      # profilin skor özeti basılmazdı. Yani "mobil performans 2 puan düştü"
+      # tek satırı, öteki profillerin ölçümünü de sessizce kapatırdı. Bu
+      # kurulumda üçü de her koşumda
+      # ölçülür, bütün tanı çıktısı üretilir, sonra iş kırmızı olur.
+      #
+      # Güvenli olmasının sebebi ölçüldü: `lhci autorun` assert başarısız olsa
+      # bile raporları YİNE yükler (autorun.js — assert → upload → exit 1),
+      # dolayısıyla skor özeti verisiz kalmaz.
+      - name: Lighthouse — mobil + aydınlık tema
+        id: profil-mobil-aydinlik
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: pnpm dlx @lhci/cli@0.15.1 autorun
+
+      # Koyu tema bizim VARSAYILAN temamız (§3) ama başlıksız bir Lighthouse
+      # koşusu onu hiç görmez: tema cookie'den okunur ve cookie yoksa 'system'
+      # devreye girer — başsız (headless) Chrome'da bu aydınlık demektir.
+      # Yani koyu tema, tam da varsayılan olduğu hâlde denetim dışı kalıyordu.
+      #
+      # Cookie sunucuya gider ve kök layout `<html class="dark">` basar; yani
+      # ölçülen şey gerçekten koyu temadır. Kanıt: üretilen raporda
+      # `configSettings.extraHeaders` alanı bu başlığı taşır.
+      - name: Lighthouse — mobil + koyu tema (varsayılan tema)
+        id: profil-mobil-koyu
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: |
+          pnpm dlx @lhci/cli@0.15.1 autorun \
+            --collect.settings.extraHeaders='{"Cookie":"sahinsamet-tema=dark"}' \
+            --upload.outputDir=lighthouse-raporu/mobil-koyu
+
+      # ÜÇÜNCÜ PROFİL — MASAÜSTÜ. T-020b'de WebGL (Aurora) yolunu ölçmek için
+      # eklenmişti; ADR-045 ile public sitede WebGL kalmadı, profil artık
+      # masaüstü düzenini (geniş hero, yapışkan proje yığını, kayan paneller)
+      # ölçüyor. Eşik diğerleriyle aynı: 0.90 (T-029e).
+      - name: Lighthouse — masaüstü + koyu tema
+        id: profil-masaustu-koyu
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/sahinsamet_ci
+        run: |
+          pnpm dlx @lhci/cli@0.15.1 autorun \
+            --collect.settings.preset=desktop \
+            --collect.settings.extraHeaders='{"Cookie":"sahinsamet-tema=dark"}' \
+            --upload.outputDir=lighthouse-raporu/masaustu-koyu
+
+      # Üç profilin skorlarını tek yerde, okunabilir biçimde özetler.
+      - name: Profil skorları
+        if: always()
+        run: |
+          node <<'BETIK'
+          const { existsSync, readdirSync, readFileSync } = require('node:fs');
+          const path = require('node:path');
+
+          const profiller = ['mobil-aydinlik', 'mobil-koyu', 'masaustu-koyu'];
+          const kategoriler = ['performance', 'accessibility', 'best-practices', 'seo'];
+
+          for (const profil of profiller) {
+            const dizin = path.join('lighthouse-raporu', profil);
+            if (!existsSync(dizin)) {
+              console.log(`\n### ${profil}: rapor yok`);
+              continue;
+            }
+
+            const raporlar = readdirSync(dizin).filter(
+              (f) => f.endsWith('.json') && !f.includes('manifest'),
+            );
+
+            const skor = {};
+            let cerez = null;
+            let ekran = null;
+            for (const f of raporlar) {
+              const lhr = JSON.parse(readFileSync(path.join(dizin, f), 'utf8'));
+              cerez ??= JSON.stringify(lhr.configSettings?.extraHeaders ?? null);
+              ekran ??= `${lhr.configSettings?.screenEmulation?.width ?? '?'}x${lhr.configSettings?.screenEmulation?.height ?? '?'}`;
+              for (const k of kategoriler) {
+                (skor[k] ??= []).push(Math.round((lhr.categories[k]?.score ?? 0) * 100));
+              }
+            }
+
+            const medyan = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+
+            console.log(`\n### ${profil}  (${raporlar.length} koşu, ${ekran}, cookie=${cerez})`);
+            for (const k of kategoriler) {
+              const d = skor[k] ?? [];
+              console.log(
+                `  ${k.padEnd(15)} medyan=${String(medyan(d)).padStart(3)}  ` +
+                  `[${d.join(', ')}]  yayılım=${Math.max(...d) - Math.min(...d)}`,
+              );
+            }
+          }
+          BETIK
+
+      # ═══════════════════════════════════════════════════════════════════════
+      # §9 KAPISI — üç profilin verdiği kararı burada topluyoruz (T-029).
+      # ═══════════════════════════════════════════════════════════════════════
+      #
+      # Üç ölçüm adımı `continue-on-error: true` taşıyor ki hepsi koşsun ve tanı
+      # çıktısı tam olsun. İŞİ DÜŞÜREN ADIM BURASI — bu adım silinirse eşikler
+      # sessizce tavsiyeye döner. Kapı gevşetilmek istenirse yapılacak şey bu
+      # adımı kaldırmak değil, `lighthouserc.json`daki eşiği ÖLÇÜYLE değiştirip
+      # gerekçesini yazmaktır.
+      #
+      # `if: always()` — önceki bir adım düşse bile
+      # profil kararı yine de raporlanır.
+      - name: §9 KAPISI — eşikleri geçemeyen profil var mı
+        if: always()
+        env:
+          MOBIL_AYDINLIK: ${{ steps.profil-mobil-aydinlik.outcome }}
+          MOBIL_KOYU: ${{ steps.profil-mobil-koyu.outcome }}
+          MASAUSTU_KOYU: ${{ steps.profil-masaustu-koyu.outcome }}
+        run: |
+          node <<'BETIK'
+          const { appendFileSync } = require('node:fs');
+
+          // Eşikler yalnızca RAPOR METNİ için burada; tek kaynak
+          // `lighthouserc.json` — üç profil de aynı eşikleri kullanıyor
+          // (T-029e'den beri masaüstü türetmesi yok).
+          const PROFILLER = [
+            { ad: 'mobil-aydinlik', env: 'MOBIL_AYDINLIK', esik: 'perf 0.90 · a11y/bp/seo 0.95' },
+            { ad: 'mobil-koyu', env: 'MOBIL_KOYU', esik: 'perf 0.90 · a11y/bp/seo 0.95' },
+            { ad: 'masaustu-koyu', env: 'MASAUSTU_KOYU', esik: 'perf 0.90 · a11y/bp/seo 0.95' },
+          ];
+
+          const satirlar = [];
+          const dusenler = [];
+
+          for (const p of PROFILLER) {
+            const sonuc = process.env[p.env];
+            // 'skipped' de başarısızlıktır: profil hiç ölçülmediyse §9 o profil
+            // için "geçti" DİYEMEZ. Sessiz atlama, T-005b'de auth paketinin
+            // kendini atlamasıyla aynı sınıf hata olurdu.
+            const gecti = sonuc === 'success';
+            if (!gecti) dusenler.push(`${p.ad} (${sonuc})`);
+            satirlar.push(`| ${p.ad} | ${p.esik} | ${gecti ? '✅ geçti' : `❌ ${sonuc}`} |`);
+          }
+
+          const ozet = [
+            '## §9 · Lighthouse kapısı',
+            '',
+            '| Profil | Eşik | Sonuç |',
+            '| ------ | ---- | ----- |',
+            ...satirlar,
+            '',
+          ];
+
+          if (dusenler.length > 0) {
+            ozet.push(
+              `**${dusenler.length} profil eşiği geçemedi:** ${dusenler.join(', ')}.`,
+              '',
+              'Skorların tamamı bir önceki adımda ("Profil skorları") ham değerleriyle',
+              'listelendi; hangi kategorinin düştüğü ilgili profil adımının çıktısında.',
+              '',
+              'Meşru iki cevap var: sayfayı hafifletmek, ya da eşiği YENİ BİR ÖLÇÜMLE ve',
+              'gerekçeyle değiştirmek (docs/security/README.md → "Eşikler error\'a çevrildi").',
+              'Seed verisi büyüdüyse bu bozuk bir kapı değil, gerçek bilgidir (ADR-030).',
+            );
+          } else {
+            ozet.push('Üç profil de eşikleri geçti.');
+          }
+
+          const metin = ozet.join('\n');
+          console.log(metin);
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, metin + '\n');
+          }
+
+          if (dusenler.length > 0) process.exit(1);
+          BETIK
+
+      # Yol NOKTA İLE BAŞLAMAMALI: `actions/upload-artifact` gizli dosya ve
+      # dizinleri varsayılan olarak atlar. Eski `.lighthouseci/` yolu bu yüzden
+      # "No files were found" uyarısı verip sessizce boş artifact üretiyordu —
+      # rapor hiçbir yere kaydedilmiyordu (BULGU-004).
+      - name: Lighthouse raporunu sakla (üç profil)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-raporu
+          path: lighthouse-raporu/
+          retention-days: 14
+          # Rapor üretilmediyse bu artık sessiz bir uyarı değil, hata olsun.
+          if-no-files-found: error

@@ -1,0 +1,78 @@
+# Yayın imajları — linux/amd64, GitHub'ın kendi amd64 makinesinde (bkz. docs/yayin-nginx.md).
+#
+# NEDEN BURADA: Mac'te (ARM) QEMU benzetimiyle derleme 10–15 dk, önbellek
+# boşken 30 dk+ sürüyordu ve Mac uykuya geçince sessizce takılıyordu
+# (2026-10-26: 13 saat apt indirmesinde bekledi). Burada benzetim yok,
+# katmanlar `type=gha` önbelleğinde.
+#
+# SUNUCUYA ERİŞMEZ: GitHub'a SSH anahtarı ya da kayıt defteri jetonu
+# verilmedi. İş imajları `docker save` ile yapıt (artifact) olarak bırakır;
+# `deploy/sunucu/gonder.sh` indirip bugünkü gibi `ssh docker load` ile yükler.
+name: Yayın imajı
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: imaj-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  imaj:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SITE_URL: https://sahinsamet.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Sürüm
+        id: surum
+        run: echo "surum=$(git rev-parse --short=9 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: uygulama
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: uygulama
+          platforms: linux/amd64
+          build-args: NEXT_PUBLIC_SITE_URL=${{ env.SITE_URL }}
+          tags: |
+            sahinsamet-uygulama:${{ steps.surum.outputs.surum }}
+            sahinsamet-uygulama:latest
+          load: true
+          cache-from: type=gha,scope=uygulama
+          cache-to: type=gha,scope=uygulama,mode=max
+
+      - name: araclar
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: araclar
+          platforms: linux/amd64
+          build-args: NEXT_PUBLIC_SITE_URL=${{ env.SITE_URL }}
+          tags: |
+            sahinsamet-araclar:${{ steps.surum.outputs.surum }}
+            sahinsamet-araclar:latest
+          load: true
+          cache-from: type=gha,scope=araclar
+          cache-to: type=gha,scope=araclar,mode=max
+
+      - name: Paketle
+        run: |
+          S=${{ steps.surum.outputs.surum }}
+          docker save "sahinsamet-uygulama:$S" sahinsamet-uygulama:latest \
+            "sahinsamet-araclar:$S" sahinsamet-araclar:latest | gzip -1 > imajlar.tar.gz
+          ls -lh imajlar.tar.gz
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: imajlar-${{ steps.surum.outputs.surum }}
+          path: imajlar.tar.gz
+          compression-level: 0
+          retention-days: 3

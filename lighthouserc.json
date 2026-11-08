@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/GoogleChrome/lighthouse-ci/main/packages/server/src/ui/schema.json",
+  "ci": {
+    "collect": {
+      "//": "PORT burada veriliyor — yapılandırma KENDİ KENDİNE YETERLİ olsun (T-002b). Sunucu `next start` DEĞİL standalone: `next start` + output:standalone gerçek Lighthouse iş yükünde 4. koşuda CHROME_INTERSTITIAL_ERROR veriyordu; standalone 10/10 temiz (T-029b). Gerekçe ve ölçüm: tests/olcum-sunucusu.mjs",
+      "startServerCommand": "PORT=3100 node tests/olcum-sunucusu.mjs",
+      "startServerReadyPattern": "Ready in",
+      "startServerReadyTimeout": 120000,
+      "url": ["http://127.0.0.1:3100/"],
+
+      "//numberOfRuns": "3 → 5 (T-029a). T-006b'de aydınlık profil 69/90/94 ölçmüştü: medyan 90 ile eşiği KIL PAYI geçti. 3 koşuda İKİ talihsiz koşu medyanı devirir; 5 koşuda üç tane gerekir. Eşikler T-029'da 'error' olacağı için bu fark, kodda hiçbir şey değişmeden kırmızıya dönen bir hat ile kararlı bir hat arasındaki fark demek.",
+      "numberOfRuns": 5,
+
+      "//settings": "`preset` ve `extraHeaders` BİLEREK BURADA DEĞİL — profiller `ci.yml` içinde CLI ile geçersiz kılınıyor. Eşikler tek yerde (aşağıda) kalsın diye; üç ayrı config dosyası olsaydı eşikler üç yere kopyalanırdı.",
+      "settings": {
+        "chromeFlags": "--no-sandbox --headless=new"
+      }
+    },
+
+    "assert": {
+      "//": "PROGRAM.md §9. F2 boyunca hepsi 'warn'di; T-029'da (F2 sonu) 'error' oldu — bu dosya artık bir MERGE KAPISI. Her eşik ÖLÇÜLMÜŞ bir medyana dayanıyor (koşumlar 32671011873 ve 32670153381, profil başına 5 koşu); hiçbiri temenni değil. Ayrıntı ve profil başına gerekçe: docs/security/README.md → 'Eşikler error'a çevrildi'.",
+
+      "//profil-farki": "ÜÇ PROFİL DE BU EŞİKLERİ KULLANIR. T-029'da `masaustu-koyu` için ayrı bir performans tavanı (0.55) `ci.yml` içinde türetiliyordu: profil 60 ölçüyordu çünkü Aurora GPU'suz koşucuda yazılımla render ediliyor, TBT 80 ms → 9 990 ms (BULGU-018). T-020c o kök nedeni kapattı (GPU yoksa Aurora hiç yüklenmiyor) ve profil koşum 32828187466'da gerçek koşucuda 100/yayılım 0 ölçtü — türetme T-029e'de KALDIRILDI. NOT (ileride yine gerekirse): LHCI'ın CLI ile assertion geçersiz kılma yolu ÇALIŞMIYOR — nokta gösterimi `normalizeAssertion is not a function` ile çöküyor, JSON dizi biçimi ise SESSİZCE yok sayılıyor (kapı gevşemiş görünmeden gevşer). O yüzden çözüm CLI bayrağı değil, config türetmekti.",
+
+      "//seo-akisli-metadata": "SEO 'error' ve 0.95 — ölçülen sayfa (`/`) üç profilde de 100, yayılım 0. Frontend'in T-025'te detay sayfalarında ölçtüğü SEO 91 (Next 15.5 akışlı metadata; `generateMetadata` gövdeyle yarışıyor, Googlebot JS çalıştırdığı için pratikte etkisiz) BU KAPIYA GİRMİYOR, çünkü ölçüm listesinde detay sayfası yok. ⚠️ `collect.url` listesine bir detay sayfası EKLENİRSE bu eşik ölçülmüş bir yanlış pozitifi merge engeline çevirir. O gün yapılacak: SEO kategorisini düşürmek DEĞİL, sorunlu denetimi tek tek hariç tutmak (`meta-description` vb. için ayrı bir assertion) ve gerekçeyi buraya yazmak. Benzetimle doğrulandı: SEO 91 verildiğinde bu eşik KIRMIZI oluyor.",
+
+      "//aggregationMethod": "AÇIKÇA yazıldı. Varsayılan zaten medyan ama örtük bir varsayılana güvenmek, kütüphane sürümüyle sessizce değişebilecek bir güvenlik/kalite kapısı bırakmak demekti (aynı ders: T-013a otplib). 'optimistic' REDDEDİLDİ: en iyi koşuyu almak gerçek gerilemeleri gizler — gürültüyü susturmak için doğruyu feda etmek olurdu.",
+      "aggregationMethod": "median",
+
+      "//esikler": "Ölçülen medyan → eşik: perf mobil 94-95 ve masaüstü 100 → 0.90 (pay 4-10 puan, §9'un hedefiyle aynı sayı) · a11y 100 → 0.95 · bp 100 → 0.95 · seo 100 → 0.95. Üç kategoride yayılım 0; performansta mobil-koyu yayılımı 1-2. Mobil-aydınlık'ta İLK KOŞU hâlâ aykırı (73 ve 66 ölçüldü) ama medyanı deviremiyor: 5 koşuda üç talihsiz koşu gerekir. Eşiklerin dördü de mutasyonla sınandı — bkz. docs/security/README.md.",
+
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.9 }],
+        "categories:accessibility": ["error", { "minScore": 0.95 }],
+        "categories:best-practices": ["error", { "minScore": 0.95 }],
+        "categories:seo": ["error", { "minScore": 0.95 }]
+      }
+    },
+
+    "upload": {
+      "//": "Nokta ile başlayan dizin KULLANILMAZ: actions/upload-artifact gizli dosyaları varsayılan olarak atlar ve `.lighthouseci/` yolu 'No files were found' ile sessizce boş artifact üretiyordu. Ayrıntı: docs/security/README.md BULGU-004.",
+      "target": "filesystem",
+      "outputDir": "lighthouse-raporu/mobil-aydinlik"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+# Dışarıdan izleme (2026-11-02). Sunucunun dışından, Mac'ten bağımsız. Düşerse iş kırmızı olur ve
+# GitHub depo sahibine e-posta gönderir; ek servis ve sunucu erişimi gerekmez.
+# Zamanlanmış iş tam zamanında koşmayabilir: dakikalık değil, "kapandığını aynı gün öğren" izleme.
+name: Izleme
+
+on:
+  schedule:
+    # Yarım saatte bir: depo herkese açık, Actions dakikası sayılmıyor.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  izle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sağlık (veritabanı, disk, zamanlayıcı)
+        run: |
+          # Tek ağ hatası alarm vermesin: üç deneme.
+          for deneme in 1 2 3; do
+            yanit=$(curl -fsS --max-time 20 https://sahinsamet.com/api/v1/health) && break
+            yanit=''
+            sleep 30
+          done
+          [ -n "$yanit" ] || { echo "::error::Site yanıt vermiyor"; exit 1; }
+          echo "$yanit"
+          echo "$yanit" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)['data']
+          sorun = []
+          if d['db'] != 'up': sorun.append('veritabanı kapalı')
+          if d['disk'] == 'critical': sorun.append('disk kritik')
+          if d.get('zamanlayici') == 'gecikmis': sorun.append('bildirim zamanlayıcısı durmuş')
+          if sorun:
+              print('::error::' + ', '.join(sorun))
+              sys.exit(1)
+          if d['disk'] == 'low': print('::warning::disk azalıyor')
+          "
+
+      - name: Ana sayfa
+        run: curl -fsS --max-time 20 -o /dev/null https://sahinsamet.com/
+
+      - name: Sertifika en az 14 gün geçerli
+        run: |
+          echo | openssl s_client -servername sahinsamet.com -connect sahinsamet.com:443 2>/dev/null \
+            | openssl x509 -noout -checkend $((14 * 24 * 3600))

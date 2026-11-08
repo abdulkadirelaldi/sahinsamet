@@ -1,0 +1,40 @@
+# Yerel geliştirme veritabanı — §2 (PostgreSQL 16), §13.2
+#
+# GÜVENLİK: port ifadesi "127.0.0.1:5432:5432" biçimindedir. Baştaki 127.0.0.1
+# ZORUNLUDUR — "5432:5432" yazılırsa Docker portu 0.0.0.0'a bağlar ve veritabanı
+# yerel ağdaki herkese açılır (§13.2: "sadece iç ağa açık, port dışarı kapalı").
+# Bu satırı değiştirmeyin.
+#
+# Üretim ortamı bu dosyayı KULLANMAZ; sunucu `deploy/sunucu/docker-compose.yml` ile çalışır.
+
+name: sahinsamet
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sahinsamet-db-dev
+    restart: unless-stopped
+    ports:
+      # Host portu bilerek 5434: 5432 çoğu makinede sistem PostgreSQL'inin, 5433
+      # başka bir yerel projenin olabilir. Çakışma sessizdir — container "healthy"
+      # görünür ama bağlantılar başka sunucuya gider ve "role does not exist" gibi
+      # yanıltıcı bir hata alırsınız. Container içi port 5432 olarak kalır.
+      - '127.0.0.1:5434:5432'
+    environment:
+      POSTGRES_USER: sahinsamet
+      POSTGRES_PASSWORD: sahinsamet_dev_only
+      POSTGRES_DB: sahinsamet
+      # Türkçe sıralama/karşılaştırma tutarlılığı için
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    volumes:
+      - sahinsamet_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sahinsamet -d sahinsamet']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  sahinsamet_pgdata:
+    name: sahinsamet_pgdata

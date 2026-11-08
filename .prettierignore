@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+build
+coverage
+pnpm-lock.yaml
+next-env.d.ts
+prisma/migrations
+*.min.*
+
+# Karar ve isletim belgeleri elle bicimlenir.
+docs/
+
+# harness / editor
+.claude/
