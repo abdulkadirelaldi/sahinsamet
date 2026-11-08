@@ -106,7 +106,18 @@ değişkeni).
 
 1. **DNS** — `sahinsamet.com` ve `www.sahinsamet.com` için **A** kaydı → sunucunun IP adresi
    (IPv6 varsa AAAA). Yayılmasını bekleyin: `dig +short sahinsamet.com`.
-2. **Dizin ve sırlar** — sunucuda:
+2. **Dizin, sırlar ve nginx — tek komut.** Geliştirme makinesinde, depo kökünde:
+
+   ```bash
+   S=$(cat ~/.config/sahinsamet/sunucu)
+   scp deploy/sunucu/{docker-compose.yml,yedek-yerel.sh,nginx-sahinsamet.com.conf,ilk-kurulum.sh} "$S":/tmp/
+   ssh "$S" 'bash /tmp/ilk-kurulum.sh panel-eposta@ornek.com'
+   ```
+
+   Betik 2–4. adımları yapar (sırları sunucuda üretir, ekrana basmaz; `.env` varsa durur). Elle
+   yapmak isterseniz aşağıdaki adımlar aynı işi görür.
+
+   **Elle:** sunucuda:
 
    ```bash
    sudo mkdir -p /opt/sahinsamet/yedek && cd /opt/sahinsamet
