@@ -39,6 +39,7 @@ import { fetchIslenenBorclar, fetchIslenenGiderler } from './odeme-onay';
  *   haftalık   pazar 20–23 · hafta boş değilse
  *   aylık      ayın 1'i 10–21 · önceki ay boş değilse
  *   ingilizce  20–22 · seri sürüyor ve bugün ders yoksa
+ *   takvim     etkinliğin seçilen hatırlatma anında — AYRI, dakikalık tur (`takvim-bildirim.ts`)
  * Varsayılan saatler ve su hedefi `lib/hedefler.ts`te; kişisel değer `Tercih`te.
  * Rekor bildirimi zamanlayıcıdan değil set yazılırken gider (`spor-gelisim.ts`).
  * Pencere dışında gönderilmez: sunucu 19:00'da kalkarsa sabahın su
@@ -62,7 +63,7 @@ export function vapidAyarlari(env: Record<string, string | undefined> = process.
 }
 
 export interface Bildirim {
-  tur: 'borc' | 'aliskanlik' | 'su' | 'haftalik' | 'aylik' | 'ingilizce' | 'test';
+  tur: 'borc' | 'aliskanlik' | 'su' | 'haftalik' | 'aylik' | 'ingilizce' | 'takvim' | 'test';
   /** Gün içinde tekrarı önleyen anahtar. */
   anahtar: string;
   baslik: string;

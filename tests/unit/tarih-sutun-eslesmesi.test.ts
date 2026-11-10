@@ -230,6 +230,27 @@ const ESLESMELER: Eslesme[] = [
     not: 'Dersin günü `@db.Date`: yazma `appDayToDate(appToday())`, okuma `dateToAppDay`; seri İstanbul gününe göre.',
   },
   {
+    servis: 'src/server/services/takvim.ts',
+    model: 'TakvimEtkinligi',
+    alan: 'baslangic',
+    beklenen: 'anlik',
+    not:
+      'Takvim (2026-11-10). `baslangic`/`bitis` GERÇEK ANLAR: saatli etkinlik ' +
+      '`appWallClockInstant`, tüm gün `appDayStartInstant` (İstanbul 00:00), aralık sorgusu da ' +
+      'anlık sınırla. Aynı modelde `tekrarBitis` ve `istisnalar` `@db.Date` — onlar ' +
+      '`appDayToDate`/`dateToAppDay`; iki aile bilerek bir arada.',
+  },
+  {
+    servis: 'src/server/services/takvim-bildirim.ts',
+    model: 'BildirimKaydi',
+    alan: 'gun',
+    beklenen: 'gun',
+    not:
+      'Takvim hatırlatma turu (2026-11-10): tekrar önleme satırının günü hatırlatma ANININ İstanbul ' +
+      'günü (`appDayToDate(toAppDay(an))`). Bugünün günü değil: gece yarısını geçen tolerans ' +
+      'penceresinde ikinci gönderim olmasın.',
+  },
+  {
     servis: 'src/server/services/aylik-ozet.ts',
     model: 'Workout',
     alan: 'date',

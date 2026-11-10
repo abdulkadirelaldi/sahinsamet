@@ -216,17 +216,30 @@ const komutlar: Record<string, (arg?: string) => Promise<unknown>> = {
      * Egzersiz ve alışkanlık arayüzden SİLİNEMİYOR (yalnızca arşiv), yani
      * test izi ancak `kisiselSondaSil` ile gider.
      */
-    const [egzersiz, aliskanlik] = await Promise.all([
+    const [egzersiz, aliskanlik, takvim] = await Promise.all([
       db.exercise.count({ where: { name: { startsWith: 'e2e', mode: 'insensitive' } } }),
       db.habit.count({ where: { name: { startsWith: 'e2e', mode: 'insensitive' } } }),
+      // Takvim (2026-11-10): `takvimSondaSil` başlık önekiyle siler; çökerse burada görünür.
+      db.takvimEtkinligi.count({ where: { baslik: { startsWith: 'e2e', mode: 'insensitive' } } }),
     ]);
-    const kisisel = egzersiz + aliskanlik;
+    const kisisel = egzersiz + aliskanlik + takvim;
 
     return {
       denetim,
       kisisel,
       toplam: denetim + kisisel,
     };
+  },
+
+  /** Takvim e2e'sinin etkinliklerini siler — BAŞLIK önekine göre; ayrık oluşumlar seriyle gider. */
+  async takvimSondaSil(arg) {
+    const { onek } = JSON.parse(arg ?? '{}') as { onek: string };
+    if (!onek || !onek.startsWith('e2e-'))
+      throw new Error('takvimSondaSil: `e2e-` ile başlayan önek zorunlu.');
+    const silinen = await db.takvimEtkinligi.deleteMany({
+      where: { baslik: { startsWith: onek } },
+    });
+    return { silinen: silinen.count };
   },
 
   /** Hızlı ekleme e2e'sinin harcamalarını siler — AD önekine göre (2026-10-30). */

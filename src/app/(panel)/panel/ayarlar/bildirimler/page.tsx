@@ -34,6 +34,7 @@ export default async function BildirimlerPage() {
               haftalik: tercih?.haftalik ?? true,
               aylik: tercih?.aylik ?? true,
               ingilizce: tercih?.ingilizce ?? true,
+              takvim: tercih?.takvim ?? true,
               suHedefMl: tercih?.suHedefMl ?? SU_HEDEFI_ML,
               suSaatleri: tercih?.suSaatleri ?? [...SU_SAATLERI],
               aliskanlikSaati: tercih?.aliskanlikSaati ?? ALISKANLIK_SAATI,

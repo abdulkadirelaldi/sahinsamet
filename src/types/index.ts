@@ -27,6 +27,8 @@ export {
   GoalPeriod,
   GoalStatus,
   MuscleGroup,
+  TakvimKategori,
+  TakvimTekrar,
   WalletAccountKind,
   WalletFlowKind,
   WalletFrequency,

@@ -1,5 +1,6 @@
 import {
   Activity,
+  CalendarDays,
   Dumbbell,
   LayoutDashboard,
   Languages,
@@ -52,6 +53,11 @@ export const PANEL_GRUPLARI: ReadonlyArray<{
       { href: '/panel/spor', label: 'Spor', icon: Dumbbell, hazir: true },
       { href: '/panel/saglik', label: 'Sağlık', icon: Activity, hazir: true },
     ],
+  },
+  {
+    // Ayrı grup: ilk grup telefondaki alt sekmeler, beşte kalmalı (2026-11-10).
+    title: 'Plan',
+    items: [{ href: '/panel/takvim', label: 'Takvim', icon: CalendarDays, hazir: true }],
   },
   {
     // Ayrı grup: ilk grup telefondaki alt sekmeler, beşte kalmalı.

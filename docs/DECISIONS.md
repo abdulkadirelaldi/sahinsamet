@@ -2667,6 +2667,18 @@ Sahibi iş yönetimini ayrı bir sistemden yürütüyor; bu panelin kişisel olm
 - **Kapsam dışı:** hızlı kayıt dışındaki formlar (ör. hesap ekleme) kuyruğa girmez.
 - **Ders:** bağlantı yokken `router.refresh()` tam yeniden yükleme yapıyor ve kullanıcıyı çevrimdışı ekranına atıyordu; kuyruk yolunda yenileme yok.
 
+### Ek (2026-11-10) — Takvim
+
+- **Ne:** `/panel/takvim` — Ay, Hafta (saat ızgarası, tüm gün satırı, şimdi çizgisi), Gün ve Ajanda. Görünüm ve tarih adreste (`?gorunum=ay&tarih=2026-11-10`): sunucuda çizilir, bağlantı paylaşılabilir, geri tuşu çalışır. Hafta pazartesi başlar, ad ve saatler Türkçe/24 saat. Telefonda hafta ızgarası kutunun içinde yatay kayar; sayfa taşmaz. Bugün panosunda "Bugünün takvimi" kartı; menüde ayrı "Plan" grubu (alt sekmeler beşte kalır).
+- **Şema:** `TakvimEtkinligi` — başlık, açıklama, konum, kategori (Spor, Toplantı, Sağlık/Doktor, Hatırlatıcı, Kişisel, İş, Diğer), tüm gün, `baslangic`/`bitis` (GERÇEK ANLAR; tüm günde ilk günün İstanbul 00:00'ı → son günün ertesi 00:00'ı), tekrar (yok/günlük/haftalık+günler/aylık/yıllık, aralık, bitiş günü ya da sayı), istisna GÜNLERİ (`@db.Date[]`), hatırlatma dakikaları (`Int[]`), `seriId` ("yalnızca bu" düzenlemesinin serisi; seri silinince o da gider). `BildirimTercihi.takvim` (varsayılan açık). Göç yalnızca EKLEME.
+- **Tekrar tek satır:** oluşumlar okunurken `src/lib/takvim/tekrar.ts`te (SAF) açılır. Kural Google ile aynı: ayın 31'i olmayan ay ATLANIR (kırpılmaz), 29 Şubat yalnızca artık yılda, sayı istisnadan önceki ADAYLARA uygulanır (RFC 5545 COUNT). Oluşum duvar saatinde kalır (`appWallClockInstant`; Türkiye'de yaz saati yok ama sabit 24 saat eklemek yazılmadı).
+- **Kapsam:** tekrarlayan etkinlikte düzenleme ve silme "Yalnızca bu / Bu ve sonrakiler / Tüm etkinlikler" sorar (tarayıcı `confirm`ü yok, pencerenin içinde). Yalnızca bu = istisna + seriye bağlı ayrı etkinlik; bu ve sonrakiler = seri bir gün önce biter (sayı sınırı bölüştürülür), yeni seri açılır; tümü = tıklanan oluşumdaki tarih/saat farkı serinin BAŞINA uygulanır.
+- **Hatırlatma:** etkinlik başına en çok 5, en uzun 4 hafta önce; hazır seçenekler + özel sayı/birim. Tüm günde çapa o günün 09:00'ı ("1 gün önce 09:00"). Varsayılan: saatli 30 dk önce, tüm gün aynı gün 09:00.
+- **Zamanlayıcı:** genel bildirim turu 5 dakikada kalır; takvim için AYRI, dakikalık ve dakikanın 2. saniyesine hizalı tur (`takvim-bildirim.ts`) — yalnızca takvimi okur, gecikme en çok birkaç saniye. Önceki tur bitmeden yenisi başlamaz. Gönderim: vakti geldikten sonraki 15 dakika içinde ve etkinlik bitmeden; sunucu kapalı kaldıysa eski hatırlatmalar yığılmaz. Tekrar önleme mevcut `bildirim_kaydi` eşsizliğiyle: anahtar etkinlik + oluşum başlangıcı + öncelik, gün hatırlatma anının günü. Ulaşılamazsa satır silinir, sonraki dakika yeniden dener.
+- **Metin:** başlık kategori ("🩺 Sağlık / Doktor"), gövde "Diş hekimi · 14:30'da (30 dk sonra) · Kadıköy" — Türkçe ek söylenişe göre (14:00'te, 14:30'da). Adres takvimi o günün Gün görünümünde açar.
+- **Gizlilik/denetim:** her mutasyon `AuditLog`a yazılır ama yalnızca alan sayıları, tekrar türü ve kapsam — başlık, konum, açıklama YAZILMAZ (doktor randevusu sağlık verisi olabilir). `takvim` modülü `kisisel-veri-erisimi` kapısındaki kişisel modüller listesinde: servis ve eylem panel ile sunucu katmanı dışında içe aktarılamaz.
+- **Bağımlılık yok:** ızgara Tailwind ile elle; FullCalendar ve benzeri eklenmedi. Renkler `dark:` varyantı olmadan iki temada okunur (dolu zemin beyaz yazı, açık zemin `/15` saydamlık).
+
 ---
 
 ## ADR-049 — Public Site Tek Sayfa: Profil + Sosyal Bağlantılar

@@ -3,6 +3,7 @@
 import {
   Bell,
   BellOff,
+  CalendarClock,
   CalendarDays,
   ChartColumn,
   Droplet,
@@ -31,6 +32,7 @@ type Tercih = {
   haftalik: boolean;
   aylik: boolean;
   ingilizce: boolean;
+  takvim: boolean;
   suHedefMl: number;
   suSaatleri: number[];
   aliskanlikSaati: number;
@@ -170,7 +172,7 @@ export function BildirimAyarlari({
   };
 
   const degistir = (
-    alan: 'borc' | 'aliskanlik' | 'su' | 'rekor' | 'haftalik' | 'aylik' | 'ingilizce',
+    alan: 'borc' | 'aliskanlik' | 'su' | 'rekor' | 'haftalik' | 'aylik' | 'ingilizce' | 'takvim',
   ) => kaydet({ ...tercih, [alan]: !tercih[alan] });
 
   const suSaatiDegistir = (saat: number) => {
@@ -314,6 +316,14 @@ export function BildirimAyarlari({
           aciklama="20:00 — seri sürüyor ve bugün ders yapmadıysan"
           acik={tercih.ingilizce}
           onClick={() => void degistir('ingilizce')}
+        />
+        <Anahtar
+          ikon={<CalendarClock className="size-4" aria-hidden="true" />}
+          renk="from-sky-500 to-indigo-600"
+          baslik="Takvim"
+          aciklama="Her etkinliğin kendi hatırlatma saatinde"
+          acik={tercih.takvim}
+          onClick={() => void degistir('takvim')}
         />
       </section>
 

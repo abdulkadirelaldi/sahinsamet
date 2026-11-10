@@ -201,6 +201,15 @@ export async function hizliSondaSil(onek: string): Promise<number> {
   return silinen;
 }
 
+/** Takvim e2e izlerini siler — gerekçe `db-task.ts` → `takvimSondaSil`. */
+export async function takvimSondaSil(onek: string): Promise<number> {
+  const { silinen } = await runTask<{ silinen: number }>(
+    'takvimSondaSil',
+    JSON.stringify({ onek }),
+  );
+  return silinen;
+}
+
 /** İngilizce e2e'sinin ders kayıtlarını siler (yalnızca `sonra`dan beri o ders). */
 export async function ingilizceSondaSil(dersId: string | string[], sonra: Date): Promise<number> {
   const { silinen } = await runTask<{ silinen: number }>(
