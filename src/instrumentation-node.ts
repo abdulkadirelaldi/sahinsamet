@@ -3,6 +3,7 @@ import { nabizVur } from './lib/zamanlayici-nabiz';
 import { bildirimTuru } from './server/services/bildirim';
 import { netVarlikKaydet } from './server/services/cuzdan-rapor';
 import { hataKaydet } from './server/services/hata-kaydi';
+import { takvimHatirlatmaTuru } from './server/services/takvim-bildirim';
 import { gunlukTemizlik } from './server/services/temizlik';
 
 /**
@@ -29,6 +30,27 @@ if (process.env.NODE_ENV === 'production') {
         .catch(hataYaz('bildirim'));
     setInterval(tur, 5 * 60_000).unref();
     setTimeout(tur, 30_000).unref();
+
+    // Takvim hatırlatmaları: dakikada bir, dakikanın 2. saniyesine hizalı — seçilen saatten en çok
+    // birkaç saniye sonra gelir. Yalnızca takvimi okur; ağır tur 5 dakikada kalır. Önceki tur
+    // bitmeden yenisi başlamaz (yavaş push sağlayıcısı turları üst üste bindirmesin).
+    let takvimSuruyor = false;
+    const takvimTur = () => {
+      if (takvimSuruyor) return;
+      takvimSuruyor = true;
+      void takvimHatirlatmaTuru()
+        .catch(hataYaz('takvim'))
+        .finally(() => {
+          takvimSuruyor = false;
+        });
+    };
+    setTimeout(
+      () => {
+        takvimTur();
+        setInterval(takvimTur, 60_000).unref();
+      },
+      60_000 - (Date.now() % 60_000) + 2_000,
+    ).unref();
   }
 
   // Net varlık: saatte bir bugünün satırını günceller; gün sonu değeri kalır.

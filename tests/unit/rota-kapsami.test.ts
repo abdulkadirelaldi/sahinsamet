@@ -338,6 +338,11 @@ const KAPSAM: Record<string, KapsamBeyani> = {
     kanit: ["'/panel/ingilizce/ders/gunluk-u1-d1',"],
     not: '2026-11-06 ders oynatıcısı; kilitli ders parkura, boş tekrar parkura döner, bilinmeyen kimlik 404. Değerlendirme `tests/unit/ingilizce/degerlendir.test.ts`. ÖLÇÜLMEYEN: gerçek cihazda sesli okuma ve konuşma tanıma.',
   },
+  '/panel/takvim': {
+    kapilar: ['e2e'],
+    kanit: ["'/panel/takvim',", "test('takvim: etkinlik oluşturulur"],
+    not: "2026-11-10 takvim: ay, hafta, gün ve ajanda; `?gorunum=` bilinmiyorsa ay, `?tarih=` bozuksa bugün. Oluştur → ay/hafta → düzenle → sil ve tekrarlayan etkinlikte 'yalnızca bu' düzenlemesi `tests/e2e/takvim.spec.ts`te. Tekrar açılımı, hatırlatma kararı ve şema `tests/unit/takvim/*`. ÖLÇÜLMEYEN: gerçek telefona hatırlatma bildirimi.",
+  },
   '/panel/aylik': {
     kapilar: ['e2e'],
     kanit: ["'/panel/aylik',"],

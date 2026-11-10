@@ -873,6 +873,8 @@ model BildirimTercihi {
   aylik           Boolean  @default(true)
   /// İngilizce serisi bozulmak üzereyken akşam hatırlatması (2026-11-06).
   ingilizce       Boolean  @default(true)
+  /// Takvim etkinliği hatırlatmaları (2026-11-10).
+  takvim          Boolean  @default(true)
   /// Günlük su hedefi. Hatırlatma, Bugün halkası ve alışkanlık işaretleme bunu okur.
   suHedefMl       Int      @default(3500)
   /// Su hatırlatmasının saatleri (İstanbul, 0–23).
@@ -946,4 +948,65 @@ model IngilizceAyar {
   updatedAt     DateTime @updatedAt
 
   @@map("ingilizce_ayar")
+}
+
+// =============================================================================
+// TAKVİM (2026-11-10)
+// =============================================================================
+
+/// Etkinlik kategorisi — renk ve simge ekranda (`src/lib/takvim/kategoriler.ts`).
+enum TakvimKategori {
+  SPOR
+  TOPLANTI
+  SAGLIK
+  HATIRLATICI
+  KISISEL
+  IS
+  DIGER
+}
+
+/// Tekrar kuralı. Aralık (`tekrarAralik`) her türde geçerli: "2 haftada bir".
+enum TakvimTekrar {
+  YOK
+  GUNLUK
+  HAFTALIK
+  AYLIK
+  YILLIK
+}
+
+/// Takvim etkinliği (2026-11-10). Tekrarlayan etkinlik TEK satır: oluşumlar okumada
+/// `src/lib/takvim/tekrar.ts` ile açılır. Saatli etkinlikte `baslangic`/`bitis` GERÇEK ANLAR;
+/// tüm gün etkinlikte ilk günün İstanbul 00:00'ı ve son günün ERTESİ 00:00'ı (dışlayıcı).
+/// Tekrar kuralı duvar saatine göre işler: "her gün 09:00" yaz saatinde de 09:00 kalır.
+model TakvimEtkinligi {
+  id            String            @id @default(cuid())
+  baslik        String
+  aciklama      String?
+  konum         String?
+  kategori      TakvimKategori    @default(KISISEL)
+  tumGun        Boolean           @default(false)
+  baslangic     DateTime
+  bitis         DateTime
+  tekrar        TakvimTekrar      @default(YOK)
+  tekrarAralik  Int               @default(1)
+  /// HAFTALIK: 1 = pazartesi … 7 = pazar.
+  tekrarGunleri Int[]
+  /// Son oluşumun günü (dahil).
+  tekrarBitis   DateTime?         @db.Date
+  tekrarSayisi  Int?
+  /// Silinmiş ya da ayrı etkinliğe dönüştürülmüş oluşumların GÜNLERİ.
+  istisnalar    DateTime[]        @db.Date
+  /// Dakika. Saatli: başlangıçtan önce. Tüm gün: o günün 09:00'ından önce.
+  hatirlatmalar Int[]
+  /// "Yalnızca bu etkinlik" düzenlemesinin ait olduğu seri; seri silinince bu da gider.
+  seriId        String?
+  seri          TakvimEtkinligi?  @relation("TakvimSeri", fields: [seriId], references: [id], onDelete: Cascade)
+  ayrilanlar    TakvimEtkinligi[] @relation("TakvimSeri")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([baslangic])
+  @@index([tekrar])
+  @@index([seriId])
+  @@map("takvim_etkinligi")
 }

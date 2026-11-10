@@ -223,6 +223,27 @@ export function appDayStartInstant(day: AppDay): Date {
 }
 
 /**
+ * `YYYY-MM-DD` + duvar saati (gece yarısından dakika) → Europe/Istanbul'daki AN (Takvim,
+ * 2026-11-10). "Her gün 09:00" tekrarı duvar saatine bağlı: yaz saati olan bir dilimde de 09:00
+ * kalmalı, sabit milisaniye eklemek bir saat kaydırırdı.
+ *
+ * Ofset İKİ KEZ ölçülüyor: ilk tahmin UTC'deki aynı duvar saatinin ofsetiyle, ikincisi bulunan
+ * anın kendi ofsetiyle. Geçiş günü dışında ikisi aynı; geçişte ikinci ölçüm doğru tarafa oturtur.
+ * `minutes` 1440 olabilir (günün sonu = ertesi günün 00:00'ı).
+ */
+export function appWallClockInstant(day: AppDay, minutes: number): Date {
+  const asIfUtc = appDayToDate(day).getTime() + minutes * 60_000;
+  const first = asIfUtc - zoneOffsetMs(new Date(asIfUtc));
+  return new Date(asIfUtc - zoneOffsetMs(new Date(first)));
+}
+
+/** Bir anın Europe/Istanbul'daki duvar saati: gece yarısından bu yana dakika (0–1439). */
+export function appWallClockMinutes(instant: Date): number {
+  const local = instant.getTime() + zoneOffsetMs(instant);
+  return Math.floor((((local % 86_400_000) + 86_400_000) % 86_400_000) / 60_000);
+}
+
+/**
  * Gün aralığını Prisma `{ gte, lt }` bloğuna çevirir — `to` DAHİL.
  *
  * ÜST SINIR DIŞLAYICI (`lt`) ve bu kasıtlı: `lte` ile "günün sonu" yazmak

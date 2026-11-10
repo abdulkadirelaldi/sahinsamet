@@ -66,6 +66,8 @@ export const KISISEL_MODULLER = [
   'habit-log',
   'goal',
   'journal-entry',
+  // 2026-11-10 — takvim: doktor randevusu, konum; sağlık verisi kadar kişisel.
+  'takvim',
 ] as const;
 
 /** Bu modüllerin İÇE AKTARILABİLDİĞİ yerler — başka her yer ihlal. */
@@ -327,9 +329,9 @@ describe('T-116 — F5 hassas veri erişimi', () => {
 
   it('önkoşul — tarama vakumda değil', () => {
     expect(dosyalar.length).toBeGreaterThan(100);
-    // Eylem dosyası olan yedi modül: health-log, exercise, workout,
-    // workout-set, habit (habit-log'u da taşıyor), goal, journal-entry.
-    expect(eylemDosyalari.length, 'F5 eylem dosyaları bulunamadı').toBe(7);
+    // Eylem dosyası olan sekiz modül: health-log, exercise, workout,
+    // workout-set, habit (habit-log'u da taşıyor), goal, journal-entry, takvim.
+    expect(eylemDosyalari.length, 'F5 eylem dosyaları bulunamadı').toBe(8);
     // Gerçek içe aktaranlar taranıyor mu — panel sayfası F5 servisini okuyor.
     expect(kod('src/app/(panel)/panel/saglik/page.tsx')).toMatch(modulDeseni('health-log'));
   });
