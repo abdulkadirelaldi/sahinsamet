@@ -327,10 +327,39 @@ async function aylikGovdesi(userId: string, gun: AppDay, saat: number): Promise<
   return gonderildi ? null : aylikMetni(await fetchAylikOzet(ay, db, gun));
 }
 
+/**
+ * Bildirimin cihazdaki ETİKETİ (`tag`, 2026-11-11). Aynı etiketli yeni bildirim eskisinin YERİNE
+ * geçer (Android bildirim çekmecesinde yığılmaz). SAF.
+ *   su, alışkanlık, İngilizce  gün içinde durum hatırlatması — en yenisi yeter: etiket yalnızca tür
+ *   takvim                     aynı oluşumun "1 gün önce" ve "15 dk önce"si birbirinin yerine:
+ *                              anahtarın sonundaki öncelik (`:dk`) atılır
+ *   diğerleri                  tür + anahtar (iki ayrı borç birbirini silmesin)
+ */
+export function bildirimEtiketi(tur: string, anahtar?: string): string {
+  if (tur === 'su' || tur === 'aliskanlik' || tur === 'ingilizce') return tur;
+  if (!anahtar) return tur;
+  return `${tur}:${tur === 'takvim' ? anahtar.replace(/:\d+$/, '') : anahtar}`;
+}
+
+/**
+ * Service worker'a giden yük. `tur` ve `etiket` İSTEĞE BAĞLI: eski service worker bilmediği
+ * alanları yok sayar, yeni service worker etiket yoksa adresten türetir. SAF.
+ */
+export function bildirimYuku(
+  b: Pick<Bildirim, 'baslik' | 'govde' | 'url'> & { tur?: string; anahtar?: string },
+): string {
+  return JSON.stringify({
+    baslik: b.baslik,
+    govde: b.govde,
+    url: b.url,
+    ...(b.tur ? { tur: b.tur, etiket: bildirimEtiketi(b.tur, b.anahtar) } : {}),
+  });
+}
+
 /** Kullanıcının tüm cihazlarına gönderir; ölü abonelikleri temizler. Gönderilen cihaz sayısı. */
 export async function kullaniciyaGonder(
   userId: string,
-  b: Pick<Bildirim, 'baslik' | 'govde' | 'url'>,
+  b: Pick<Bildirim, 'baslik' | 'govde' | 'url'> & { tur?: string; anahtar?: string },
   vapid: Vapid,
 ): Promise<number> {
   webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
@@ -341,7 +370,7 @@ export async function kullaniciyaGonder(
       try {
         await webpush.sendNotification(
           { endpoint: a.endpoint, keys: { p256dh: a.p256dh, auth: a.auth } },
-          JSON.stringify({ baslik: b.baslik, govde: b.govde, url: b.url }),
+          bildirimYuku(b),
           // Yanıt vermeyen uç nokta bütün turu bekletmesin.
           { TTL: 60 * 60, timeout: 10_000 },
         );

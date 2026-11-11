@@ -34,6 +34,27 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(event.request).catch(() => caches.match(CEVRIMDISI)));
 });
 
+/* Bildirim seçenekleri (2026-11-11, Android). SAF — `tests/unit/sw-bildirim.test.ts` okur.
+   - `badge`: durum çubuğu rozeti TEK RENK; Android yalnızca saydamlığı çizer. Renkli ikon
+     orada beyaz bir kare olurdu → saydam zemin üstüne beyaz "SŞ".
+   - `tag`: aynı etiketli yeni bildirim eskisinin yerine geçer (çekmecede yığılmaz). Sunucu
+     `etiket` gönderir; eski sunucudan gelen yükte yoksa adresten türetilir.
+   - `renotify`: yerine geçen bildirim de titreşsin/ses çıkarsın — yoksa sessizce güncellenirdi.
+   - `requireInteraction` verilmez (varsayılan): hatırlatma kendiliğinden kaybolabilsin. */
+function bildirimSecenekleri(veri, simdi) {
+  return {
+    body: veri.govde,
+    icon: '/icon.png',
+    badge: '/bildirim-rozet.png',
+    tag: veri.etiket || `sahinsamet:${veri.url}`,
+    renotify: true,
+    timestamp: simdi,
+    vibrate: [120, 60, 120],
+    lang: 'tr',
+    data: { url: veri.url, tur: veri.tur },
+  };
+}
+
 self.addEventListener('push', (event) => {
   let veri = { baslik: 'SŞ Panel', govde: '', url: '/panel' };
   try {
@@ -42,12 +63,7 @@ self.addEventListener('push', (event) => {
     /* boş ya da düz metin — varsayılanlar */
   }
   event.waitUntil(
-    self.registration.showNotification(veri.baslik, {
-      body: veri.govde,
-      icon: '/icon.png',
-      badge: '/icon.png',
-      data: { url: veri.url },
-    }),
+    self.registration.showNotification(veri.baslik, bildirimSecenekleri(veri, Date.now())),
   );
 });
 

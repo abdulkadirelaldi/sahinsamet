@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRef } from 'react';
 
+import { useGeriTusuylaKapat } from '@/components/panel/geri-tusu';
 import { useOdakTuzagi } from '@/components/panel/odak-tuzagi';
 import { useMenuDurumu } from '@/components/panel/panel-kabuk';
 import { PANEL_GRUPLARI } from '@/components/panel/panel-rotalar';
@@ -49,6 +50,8 @@ function MenuIcerigi({ pathname, secildi }: { pathname: string; secildi?: () => 
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    // Çekmecede: çekmecenin eklediği geçmiş kaydının yerine yazılır (`useGeriTusuylaKapat`).
+                    replace={Boolean(secildi)}
                     aria-current={aktif ? 'page' : undefined}
                     // Bulunulan sayfaya dokununca adres değişmez, çekmece yine kapansın.
                     onClick={secildi}
@@ -87,6 +90,8 @@ export function Sidebar() {
   const { acik, kapat } = useMenuDurumu();
   const cekmece = useRef<HTMLDivElement>(null);
   useOdakTuzagi(acik, cekmece, kapat);
+  // Android geri jesti çekmeceyi kapatır; çekmecedeki bağlantılar `replace` ile gider.
+  useGeriTusuylaKapat(acik, kapat);
 
   return (
     <>
@@ -148,6 +153,7 @@ export function Sidebar() {
             <div className="flex items-center justify-between">
               <Link
                 href="/panel"
+                replace
                 className="focus-ring rounded-btn font-display text-primary flex items-center gap-2.5 px-1 text-base font-bold tracking-tight"
               >
                 <span aria-hidden="true" className="marka-isaret">
@@ -171,6 +177,7 @@ export function Sidebar() {
             {/* Telefonda üst çubukta "Siteye dön" yok (yer darlığı) — burada. */}
             <Link
               href="/"
+              replace
               className="focus-ring rounded-btn border-line text-body hover:text-primary mt-auto border px-3 py-2.5 text-center text-sm"
             >
               Siteye dön

@@ -159,6 +159,8 @@ async function rekorGonder(userId: string, set: EklenenSet, kg: number): Promise
       baslik: 'Yeni rekor 🏆',
       govde: `${set.exerciseName} · ${String(kg).replace('.', ',')} kg × ${set.reps}`,
       url: '/panel/spor/gelisim',
+      tur: 'rekor',
+      anahtar: `${set.exerciseId}:${set.reps}:${kg}`,
     },
     vapid,
   );

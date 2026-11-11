@@ -33,12 +33,18 @@ export const metadata: Metadata = {
 };
 
 /**
- * `viewportFit: 'cover'` — içerik çentiğin ve ana ekran çubuğunun altına
+ * `viewportFit: 'cover'` — içerik çentiğin ve ana ekran çubuğunun (Android'de jest çubuğunun) altına
  * uzanır, `env(safe-area-inset-*)` değerleri dolu gelir. Üst çubuk ve alt
  * sekmeler bu payı kendileri bırakıyor.
  */
 export const viewport: Viewport = {
   viewportFit: 'cover',
+  /*
+   * Android Chrome (2026-11-11): klavye açılınca görünüm KÜÇÜLÜR (`resizes-content`) — alttan
+   * açılan sayfadaki alanlar (`max-h-[90dvh]`) klavyenin altında kalmaz, sayfa yukarı kayar.
+   * iOS Safari bu anahtarı yok sayar; davranışı değişmez.
+   */
+  interactiveWidget: 'resizes-content',
   // Panel koyu başlar: tarayıcı ve durum çubuğu da aynı zeminde (`--bg-base`, koyu).
   themeColor: '#08080d',
 };

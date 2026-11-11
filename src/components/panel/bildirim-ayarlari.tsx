@@ -15,7 +15,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
+import { UygulamaYukle } from '@/components/panel/uygulama-yukle';
 import { litreBicim } from '@/lib/hedefler';
+import { platformBul, type Platform } from '@/lib/platform';
 import { cn } from '@/lib/utils/cn';
 import {
   bildirimAboneOlAction,
@@ -71,6 +73,10 @@ function cihazAdi(): string {
  * uygulamada (iOS 16.4+) çalışır; Safari sekmesinde açıldıysa ekran bunu
  * söyler. İzin isteği bir dokunuşla başlar — iOS kendiliğinden sormaya izin
  * vermez.
+ *
+ * ANDROID (2026-11-11): push Chrome sekmesinde de çalışır, yüklemek isteğe bağlı. Asıl engel
+ * Xiaomi HyperOS'un pil tasarrufu: arka plandaki Chrome'u durdurup bildirimi geciktiriyor —
+ * ekran yalnızca Android'de bunun yönergesini gösterir (iOS'ta yalnızca iOS'unkini).
  */
 export function BildirimAyarlari({
   vapidAnahtari,
@@ -80,13 +86,16 @@ export function BildirimAyarlari({
   tercih: Tercih;
 }) {
   const [destek, setDestek] = useState<Destek>('kontrol');
+  const [platform, setPlatform] = useState<Platform>('diger');
   const [abone, setAbone] = useState(false);
   const [bekliyor, setBekliyor] = useState(false);
   const [tercih, setTercih] = useState(ilkTercih);
   const [mesaj, setMesaj] = useState<{ ton: 'ok' | 'hata'; metin: string } | null>(null);
 
   useEffect(() => {
-    const iOS = /iPhone|iPad/.test(navigator.userAgent);
+    const cihaz = platformBul(navigator.userAgent, navigator.maxTouchPoints);
+    setPlatform(cihaz);
+    const iOS = cihaz === 'ios';
     const anaEkranda =
       window.matchMedia('(display-mode: standalone)').matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone === true;
@@ -110,7 +119,10 @@ export function BildirimAyarlari({
       if (izin !== 'granted') {
         setMesaj({
           ton: 'hata',
-          metin: 'İzin verilmedi. Ayarlar → Bildirimler → SŞ Panel’den açabilirsin.',
+          metin:
+            platform === 'android'
+              ? 'İzin verilmedi. Chrome’da adres çubuğundaki site ayarları → Bildirimler → İzin ver.'
+              : 'İzin verilmedi. Ayarlar → Bildirimler → SŞ Panel’den açabilirsin.',
         });
         return;
       }
@@ -260,6 +272,9 @@ export function BildirimAyarlari({
         </p>
       </section>
 
+      {platform === 'android' && <AndroidYonergesi />}
+      <UygulamaYukle />
+
       <section aria-label="Bildirim türleri" className="rounded-card border-line bg-surface border">
         <Anahtar
           ikon={<Wallet className="size-4" aria-hidden="true" />}
@@ -394,6 +409,42 @@ export function BildirimAyarlari({
         </fieldset>
       </section>
     </div>
+  );
+}
+
+/** Android + Xiaomi HyperOS: bildirim gecikmesin diye yapılacaklar. Kısa tutulur. */
+function AndroidYonergesi() {
+  return (
+    <section
+      aria-labelledby="android-yonerge"
+      className="rounded-card border-line bg-surface flex flex-col gap-3 border p-5 text-sm"
+    >
+      <h2 id="android-yonerge" className="text-primary text-base">
+        Android’de bildirim
+      </h2>
+      <p className="text-body">
+        Chrome’da açıkken de bildirim gelir; uygulama olarak yüklemek isteğe bağlı ama önerilir (tam
+        ekran, kısayollar). İzni Chrome sorar: <strong>İzin ver</strong>.
+      </p>
+      <div className="flex flex-col gap-1.5">
+        <h3 className="text-primary font-medium">Xiaomi · POCO · Redmi (HyperOS)</h3>
+        <p className="text-muted">
+          Pil tasarrufu arka plandaki Chrome’u durdurur, bildirimler geç gelir:
+        </p>
+        <ol className="text-body list-decimal space-y-1 pl-5">
+          <li>
+            Ayarlar → Uygulamalar → Chrome → Pil tasarrufu → <strong>Kısıtlama yok</strong>
+          </li>
+          <li>
+            Aynı sayfada <strong>Otomatik başlatma</strong> açık
+          </li>
+          <li>
+            Bildirimler → <strong>Kilit ekranı</strong> ve <strong>Kayan bildirimler</strong> izinli
+          </li>
+        </ol>
+        <p className="text-muted">Uygulama olarak yüklediysen aynısını “SŞ Panel” için de yap.</p>
+      </div>
+    </section>
   );
 }
 
