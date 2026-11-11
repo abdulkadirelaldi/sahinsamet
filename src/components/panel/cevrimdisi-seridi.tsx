@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { kurulumIstemiDinle } from '@/components/panel/kurulum-istemi';
 import {
   kayitOzeti,
   KUYRUK_OLAYI,
@@ -88,6 +89,8 @@ export function CevrimdisiSeridi() {
   }, [router]);
 
   useEffect(() => {
+    // Chrome'un yükleme olayı sayfa açılırken bir kez gelir; panelin her ekranında yakalanır.
+    kurulumIstemiDinle();
     if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
       void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined);
     }

@@ -57,7 +57,7 @@ export async function takvimHatirlatmaTuru(simdi: Date = new Date()): Promise<nu
       if (!kayit) continue;
       const ulasan = await kullaniciyaGonder(
         userId,
-        hatirlatmaMetni(v.etkinlik, v.olusum, simdi),
+        { ...hatirlatmaMetni(v.etkinlik, v.olusum, simdi), tur: 'takvim', anahtar: v.anahtar },
         vapid,
       );
       gonderilen += ulasan;

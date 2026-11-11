@@ -135,6 +135,7 @@ export async function testBildirimiAction(): Promise<ApiResponse<{ cihaz: number
         baslik: 'Bildirimler açık ✅',
         govde: 'SŞ Panel bu cihaza bildirim gönderebiliyor.',
         url: '/panel',
+        tur: 'test',
       },
       vapid,
     );

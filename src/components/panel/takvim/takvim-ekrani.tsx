@@ -3,7 +3,7 @@
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { buttonClasses } from '@/components/ui/button';
 import type { TakvimKapsami } from '@/lib/schemas/takvim';
@@ -79,6 +79,20 @@ export function TakvimEkrani({
     if (etkinlik) setDurum({ tur: 'detay', olusum, etkinlik });
   };
   const gunAdresi = (gun: AppDay) => takvimAdresi('gun', gun);
+
+  /*
+   * Kısayol adresi (2026-11-11): `?yeni=1` "Yeni etkinlik" penceresini bugüne açar — Android ana
+   * ekran kısayolu ("Etkinlik ekle") bunu kullanır. Parametre adresten silinir: yenilemede
+   * pencere yeniden açılmasın (hızlı eklemenin `?ekle=` deseni).
+   */
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('yeni') !== '1') return;
+    setDurum({ tur: 'yeni', form: yeniForm(bugun, 9 * 60) });
+    url.searchParams.delete('yeni');
+    window.history.replaceState(window.history.state, '', url);
+    // Yalnızca ilk açılışta: kısayol sayfayı bu parametreyle açar.
+  }, []);
 
   const bitti = <T,>(sonuc: ApiResponse<T>): ApiResponse<T> => {
     if (sonuc.ok) {

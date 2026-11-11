@@ -2,7 +2,14 @@
  * Uygulama ikonlarını üretir: `src/app/icon.png` (192, yuvarlak köşe),
  * `apple-icon.png` (180, iOS kendisi yuvarlar) ve `favicon.ico` (16/32/48).
  *
- *   node scripts/ikon-uret.mjs [çıktı-dizini]
+ * Android (2026-11-11) — `public/` altına, manifest ve service worker için:
+ *   `panel-ikon-512.png`      512, yuvarlak köşe (`purpose: any`, yükleme ekranı)
+ *   `panel-ikon-maskable.png` 512, TAM DOLU zemin; harfler ortadaki %80'lik güvenli
+ *                             dairede (başlatıcı daire, damla, kare… ne keserse kessin)
+ *   `bildirim-rozet.png`      96, saydam zemin + BEYAZ harfler: Android durum çubuğu
+ *                             rozetin yalnızca saydamlığını (alfa) çizer, renk görmez
+ *
+ *   node scripts/ikon-uret.mjs [çıktı-dizini] [public-dizini]
  *
  * Harfler repodaki Space Grotesk ile Playwright'ın Chromium'unda çiziliyor —
  * ek bağımlılık yok. Baş harfler `src/lib/constants.ts` → `SITE_INITIALS` ile aynı.
@@ -15,24 +22,31 @@ import { chromium } from '@playwright/test';
 
 const KOK = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CIKTI = process.argv[2] ?? resolve(KOK, 'src/app');
+const GENEL = process.argv[3] ?? resolve(KOK, 'public');
 const font = `data:font/woff2;base64,${readFileSync(`${KOK}/src/app/fonts/space-grotesk.woff2`).toString('base64')}`;
 
-function html(boyut, yuvarlak) {
+/**
+ * `olcek` harf boyunu küçültür (maskable güvenli alan); `rozet` zemini kaldırır ve noktayı da
+ * beyaz çizer (tek renkli bildirim rozeti).
+ */
+function html(boyut, yuvarlak, { olcek = 1, rozet = false } = {}) {
   const r = yuvarlak ? Math.round(boyut * 0.225) : 0;
+  const yazi = Math.round(boyut * 0.44 * olcek);
+  const nokta = Math.max(2, Math.round(boyut * 0.085 * olcek));
   return `<!doctype html><html><head><style>
 @font-face{font-family:SG;src:url('${font}') format('woff2');font-weight:600 700;}
 html,body{margin:0;width:${boyut}px;height:${boyut}px;background:transparent;}
-.k{width:${boyut}px;height:${boyut}px;border-radius:${r}px;background:#0a0a12;display:flex;align-items:center;justify-content:center;}
-.t{font-family:SG;font-weight:700;color:#fff;font-size:${Math.round(boyut * 0.44)}px;letter-spacing:-0.04em;line-height:1;display:flex;align-items:baseline;transform:translateY(-${Math.round(boyut * 0.03)}px)}
-.n{display:inline-block;width:${Math.max(2, Math.round(boyut * 0.085))}px;height:${Math.max(2, Math.round(boyut * 0.085))}px;background:#7756ff;margin-left:${Math.max(1, Math.round(boyut * 0.025))}px;}
+.k{width:${boyut}px;height:${boyut}px;border-radius:${r}px;background:${rozet ? 'transparent' : '#0a0a12'};display:flex;align-items:center;justify-content:center;}
+.t{font-family:SG;font-weight:700;color:#fff;font-size:${yazi}px;letter-spacing:-0.04em;line-height:1;display:flex;align-items:baseline;transform:translateY(-${Math.round(boyut * 0.03 * olcek)}px)}
+.n{display:inline-block;width:${nokta}px;height:${nokta}px;background:${rozet ? '#fff' : '#7756ff'};margin-left:${Math.max(1, Math.round(boyut * 0.025 * olcek))}px;}
 </style></head><body><div class="k"><div class="t">SŞ<span class="n"></span></div></div></body></html>`;
 }
 
 const tarayici = await chromium.launch();
 const sayfa = await tarayici.newPage({ deviceScaleFactor: 1 });
-async function cek(boyut, yuvarlak, dosya, saydam = true) {
+async function cek(boyut, yuvarlak, dosya, saydam = true, secenek = {}) {
   await sayfa.setViewportSize({ width: boyut, height: boyut });
-  await sayfa.setContent(html(boyut, yuvarlak));
+  await sayfa.setContent(html(boyut, yuvarlak, secenek));
   await sayfa.evaluate(() => document.fonts.ready);
   const png = await sayfa.screenshot({
     omitBackground: saydam,
@@ -43,6 +57,10 @@ async function cek(boyut, yuvarlak, dosya, saydam = true) {
 }
 await cek(192, true, `${CIKTI}/icon.png`);
 await cek(180, false, `${CIKTI}/apple-icon.png`, false);
+await cek(512, true, `${GENEL}/panel-ikon-512.png`);
+// Harf bloğu ~%55 genişlik → 0.7 ölçekle ~%39: köşegeniyle birlikte %80'lik dairenin içinde.
+await cek(512, false, `${GENEL}/panel-ikon-maskable.png`, false, { olcek: 0.7 });
+await cek(96, false, `${GENEL}/bildirim-rozet.png`, true, { olcek: 1.25, rozet: true });
 const p16 = await cek(16, true, null);
 const p32 = await cek(32, true, null);
 const p48 = await cek(48, true, null);
@@ -71,4 +89,4 @@ girdiler.forEach(([b, png], i) => {
 });
 writeFileSync(`${CIKTI}/favicon.ico`, Buffer.concat([baslik, ...girdiler.map(([, p]) => p)]));
 await tarayici.close();
-process.stdout.write(`İkonlar yazıldı: ${CIKTI}\n`);
+process.stdout.write(`İkonlar yazıldı: ${CIKTI}, ${GENEL}\n`);

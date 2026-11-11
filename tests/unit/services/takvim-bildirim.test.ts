@@ -68,6 +68,9 @@ describe('takvimHatirlatmaTuru', () => {
       baslik: '🩺 Sağlık / Doktor',
       govde: "Diş hekimi · 14:30'da (30 dk sonra) · Kadıköy",
       url: '/panel/takvim?gorunum=gun&tarih=2026-11-10',
+      tur: 'takvim',
+      // Öncelik (`:30`) etikette yok: aynı oluşumun öteki hatırlatması bunun yerine geçer.
+      etiket: 'takvim:e1:2026-11-10T11:30:00.000Z',
     });
   });
 

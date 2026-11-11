@@ -3,12 +3,14 @@
 import { X } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 
+import { useGeriTusuylaKapat } from '@/components/panel/geri-tusu';
 import { useOdakTuzagi } from '@/components/panel/odak-tuzagi';
 
 /**
  * TAKVİM PENCERESİ (2026-11-10) — hızlı kaydın alt sayfa deseni (`hizli-ekle.tsx`): telefonda
  * alttan çıkan sayfa, masaüstünde ortada pencere. Odak içeride döner, Esc kapatır, kapanınca odak
- * açan öğeye döner (`useOdakTuzagi`). `data-ilk-odak` taşıyan öğe açılışta odağı alır.
+ * açan öğeye döner (`useOdakTuzagi`). `data-ilk-odak` taşıyan öğe açılışta odağı alır. Android'in
+ * geri jesti pencereyi kapatır, takvimden çıkmaz (`useGeriTusuylaKapat`).
  */
 export function Pencere({
   baslik,
@@ -21,6 +23,7 @@ export function Pencere({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useOdakTuzagi(true, ref, kapat);
+  useGeriTusuylaKapat(true, kapat);
 
   // Odak tuzağı pencerenin kendisine odaklandıktan SONRA (aynı bileşende, sırayla).
   useEffect(() => {

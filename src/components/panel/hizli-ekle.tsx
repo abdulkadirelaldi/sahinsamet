@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { useGeriTusuylaKapat } from '@/components/panel/geri-tusu';
 import { useOdakTuzagi } from '@/components/panel/odak-tuzagi';
 
 import { tutarOku } from '@/components/panel/cuzdan-bicim';
@@ -36,7 +37,8 @@ import {
 /**
  * HIZLI EKLEME (2026-10-30) — her panel ekranında, alt sekme çubuğunun
  * üstünde "+". Telefonda en sık üç iş tek dokunuşla: harcama, kilo, su.
- * Alttan açılan sayfa (iOS "sheet"); ESC ya da dışına dokunmak kapatır.
+ * Alttan açılan sayfa (iOS "sheet"); ESC, dışına dokunmak ya da Android'in geri
+ * jesti kapatır.
  */
 
 type Gorunum = 'menu' | 'harcama' | 'kilo' | 'su' | 'uyku';
@@ -52,6 +54,7 @@ export function HizliEkle() {
   const kapanisZamani = useRef<number | null>(null);
   const pencere = useRef<HTMLDivElement>(null);
   useOdakTuzagi(acik, pencere, () => kapat());
+  useGeriTusuylaKapat(acik, () => kapat());
   const kapat = () => {
     // Eski zamanlayıcı yeniden açılan pencereyi ve yazılan değeri kapatmasın.
     if (kapanisZamani.current !== null) window.clearTimeout(kapanisZamani.current);
@@ -254,6 +257,8 @@ export function HizliEkle() {
                 </Kutu>
                 <Link
                   href="/panel/hayat"
+                  // Sayfanın eklediği geçmiş kaydının yerine yazılır (`useGeriTusuylaKapat`).
+                  replace
                   onClick={kapat}
                   className="focus-ring bg-elevated text-body col-span-2 flex min-h-12 items-center justify-center gap-2 rounded-2xl text-sm font-medium"
                 >
