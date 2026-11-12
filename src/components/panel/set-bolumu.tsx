@@ -1,7 +1,6 @@
 'use client';
 
 import { ListPlus, Pencil, Plus } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import type { DefaultValues } from 'react-hook-form';
@@ -224,12 +223,10 @@ export function SetBolumu({
           title="Bu antrenmanda henüz set yok"
           description="Hareketi seç, tekrar ve ağırlığı gir. Her set rekorları kendiliğinden yeniden hesaplatır."
           action={
-            egzersizler.length > 0 ? (
-              <a href="#set-formu-baslik" className={buttonClasses({ size: 'sm' })}>
-                <Plus className="size-4" aria-hidden="true" />
-                İlk seti ekle
-              </a>
-            ) : undefined
+            <a href="#set-formu-baslik" className={buttonClasses({ size: 'sm' })}>
+              <Plus className="size-4" aria-hidden="true" />
+              İlk seti ekle
+            </a>
           }
         />
       ) : (
@@ -253,34 +250,24 @@ export function SetBolumu({
         ))
       )}
 
-      {egzersizler.length === 0 && !duzenlenen ? (
-        <EmptyState
-          icon={ListPlus}
-          title="Seçilebilecek egzersiz yok"
-          description="Set girmek için önce egzersiz kütüphanesine en az bir aktif hareket ekle."
-          action={
-            <Link href="/panel/spor/egzersizler/yeni" className={buttonClasses({ size: 'sm' })}>
-              <Plus className="size-4" aria-hidden="true" />
-              Egzersiz ekle
-            </Link>
-          }
-        />
-      ) : (
-        <SetFormu
-          /* Düzenlenen set değişince form SIFIRDAN kurulsun — varsayılanlar ona ait. */
-          key={duzenlenen?.id ?? 'yeni'}
-          antrenmanId={antrenmanId}
-          setler={setler}
-          egzersizler={egzersizler}
-          ekEgzersizler={ekEgzersizler}
-          set={duzenlenen ?? undefined}
-          vazgec={() => setDuzenlenen(null)}
-          duzenlemeBitti={(mesaj) => {
-            setDuzenlenen(null);
-            setBildirim(mesaj);
-          }}
-        />
-      )}
+      {/*
+        Kütüphane boşken de set formu çizilir (2026-11-12): hareket seçicinin altındaki
+        "Yeni hareket ekle" ile ilk hareket burada açılır — ayrı sayfaya gitmek gerekmez.
+      */}
+      <SetFormu
+        /* Düzenlenen set değişince form SIFIRDAN kurulsun — varsayılanlar ona ait. */
+        key={duzenlenen?.id ?? 'yeni'}
+        antrenmanId={antrenmanId}
+        setler={setler}
+        egzersizler={egzersizler}
+        ekEgzersizler={ekEgzersizler}
+        set={duzenlenen ?? undefined}
+        vazgec={() => setDuzenlenen(null)}
+        duzenlemeBitti={(mesaj) => {
+          setDuzenlenen(null);
+          setBildirim(mesaj);
+        }}
+      />
     </section>
   );
 }
@@ -441,6 +428,12 @@ function SetFormu({
         >
           {set ? `Seti düzenle · ${set.exerciseName} ${set.setNo}. set` : 'Set ekle'}
         </CardTitle>
+
+        {tumu.length === 0 && !arsivliBagli && (
+          <p className="text-muted text-sm">
+            Kütüphanede aktif hareket yok. Aşağıdaki “Yeni hareket ekle” ile ilkini aç.
+          </p>
+        )}
 
         {arsivliBagli && (
           <p className="text-muted text-sm">
