@@ -17,6 +17,7 @@ import { KaliciSilDugmesi } from '@/components/panel/kalici-sil-dugmesi';
 import { KAS_GRUBU, olcuBicim } from '@/components/panel/kisisel-etiketler';
 import { FormKabugu, usePanelForm } from '@/components/panel/panel-form';
 import { VeriTablosu, type Sutun } from '@/components/panel/veri-tablosu';
+import { YeniHareket } from '@/components/panel/yeni-hareket';
 import { Button, buttonClasses } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -380,7 +381,21 @@ function SetFormu({
     formState: { errors },
   } = form;
 
+  /* Seçiciden YENİ açılan hareketler (2026-11-12) — sunucu listesi yenilenene kadar burada. */
+  const [eklenenler, setEklenenler] = useState<SetEgzersizi[]>([]);
   const secilen = watch('exerciseId');
+
+  /*
+    Yeni açılan hareket SEÇENEK ÇİZİLDİKTEN SONRA seçilir: `<select>` kayıtlı (kontrolsüz)
+    alan; listede olmayan bir değeri `setValue` DOM'a yazamıyor ve seçim ilk harekette kalıyordu
+    (e2e yakaladı, 2026-11-12).
+  */
+  const [bekleyenSecim, setBekleyenSecim] = useState<string | null>(null);
+  useEffect(() => {
+    if (!bekleyenSecim || !eklenenler.some((e) => e.id === bekleyenSecim)) return;
+    setValue('exerciseId', bekleyenSecim, { shouldValidate: true });
+    setBekleyenSecim(null);
+  }, [bekleyenSecim, eklenenler, setValue]);
 
   /*
     YENİ set modunda numara seçilen harekete göre ilerliyor. `setler` bağımlılıkta:
@@ -398,16 +413,21 @@ function SetFormu({
     if (duzenleme) baslikRef.current?.focus();
   }, [duzenleme]);
 
-  /* Seçenekler kas grubuna göre — servis zaten (kas grubu, ad) sırasında veriyor. */
-  const kasGruplari = egzersizler.reduce<Array<{ grup: MuscleGroup; liste: SetEgzersizi[] }>>(
-    (acc, e) => {
-      const son = acc.at(-1);
-      if (son?.grup === e.muscleGroup) son.liste.push(e);
-      else acc.push({ grup: e.muscleGroup, liste: [e] });
-      return acc;
-    },
-    [],
-  );
+  const tumu = [
+    ...egzersizler,
+    ...eklenenler.filter((e) => !egzersizler.some((x) => x.id === e.id)),
+  ];
+
+  /*
+    Seçenekler kas grubuna göre — servis zaten (kas grubu, ad) sırasında veriyor; sonradan
+    eklenen hareket kendi grubuna katılır (grup İLK görüldüğü sırada kalır).
+  */
+  const kasGruplari = tumu.reduce<Array<{ grup: MuscleGroup; liste: SetEgzersizi[] }>>((acc, e) => {
+    const grup = acc.find((g) => g.grup === e.muscleGroup);
+    if (grup) grup.liste.push(e);
+    else acc.push({ grup: e.muscleGroup, liste: [e] });
+    return acc;
+  }, []);
 
   return (
     <Card>
@@ -475,6 +495,17 @@ function SetFormu({
               </select>
             )}
           </Alan>
+
+          {!duzenleme && (
+            <YeniHareket
+              eklendi={(e) => {
+                setEklenenler((l) =>
+                  l.some((x) => x.id === e.id) ? l : [...l, { ...e, isArchived: false }],
+                );
+                setBekleyenSecim(e.id);
+              }}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Alan id="setNo" etiket="Set no" hata={errors.setNo?.message}>

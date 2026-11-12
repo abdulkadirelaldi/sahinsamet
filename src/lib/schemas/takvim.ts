@@ -160,3 +160,35 @@ export type TakvimGuncelleGirdisi = z.infer<typeof takvimGuncelleSchema>;
 
 export const takvimSilSchema = z.object(kapsamAlanlari);
 export type TakvimSilGirdisi = z.infer<typeof takvimSilSchema>;
+
+/**
+ * SPOR PROGRAMINI TAKVİME EKLE (2026-11-12) — bir program günü (ör. "İtiş") seçilen hafta
+ * günlerinde, aynı saatte, haftalık tekrarlanan bir Spor etkinliği olur. `id` verilirse o
+ * planı (aynı günün mevcut etkinliğini) günceller; verilmezse yeni plan açar.
+ */
+export const SPOR_SURE_DK = { varsayilan: 75, en_az: 15, en_cok: 300 } as const;
+
+export const sporTakvimSchema = z
+  .object({
+    id: cuidSchema.optional(),
+    dayId: cuidSchema,
+    gunler: z
+      .array(z.number().int().min(1).max(7))
+      .min(1, { error: 'En az bir gün seç.' })
+      .max(7)
+      .transform((g) => [...new Set(g)].sort((a, b) => a - b)),
+    saat: saatSchema,
+    sureDk: z
+      .number({ error: 'Süre dakika olarak girilmeli.' })
+      .int({ error: 'Süre tam dakika olmalı.' })
+      .min(SPOR_SURE_DK.en_az, { error: `Süre en az ${SPOR_SURE_DK.en_az} dakika.` })
+      .max(SPOR_SURE_DK.en_cok, { error: `Süre en çok ${SPOR_SURE_DK.en_cok} dakika.` }),
+    baslangicGun: gunSchema,
+    bitisGun: gunSchema.nullable(),
+    hatirlatmalar: etkinlikNesnesi.shape.hatirlatmalar,
+  })
+  .refine((v) => v.bitisGun === null || v.bitisGun >= v.baslangicGun, {
+    error: 'Bitiş tarihi başlangıçtan önce olamaz.',
+    path: ['bitisGun'],
+  });
+export type SporTakvimGirdisi = z.infer<typeof sporTakvimSchema>;

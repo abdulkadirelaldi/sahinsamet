@@ -14,7 +14,8 @@ import {
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 
-import { finishSessionAction } from '@/server/actions/antrenman-oturumu';
+import { YeniHareket } from '@/components/panel/yeni-hareket';
+import { abandonSessionAction, finishSessionAction } from '@/server/actions/antrenman-oturumu';
 import {
   createWorkoutSetAction,
   deleteWorkoutSetAction,
@@ -75,6 +76,27 @@ export function OturumEkrani({
   const [hata, setHata] = useState<string | null>(null);
   const [rekor, setRekor] = useState<string | null>(null);
   const [bekliyor, basla] = useTransition();
+  /* Seçiciden YENİ açılan hareketler — sunucu listesi bu oturum boyunca yenilenmiyor. */
+  const [eklenenler, setEklenenler] = useState<typeof egzersizler>([]);
+  const secenekler = [
+    ...egzersizler,
+    ...eklenenler.filter((e) => !egzersizler.some((x) => x.id === e.id)),
+  ];
+
+  /* Hiç set girilmemiş oturumu siler ve Spor ekranına döner. */
+  const vazgec = () => {
+    setHata(null);
+    basla(async () => {
+      try {
+        const sonuc = await abandonSessionAction({ id: oturum.id });
+        if (!sonuc.ok) return setHata(sonuc.error.message);
+        router.push('/panel/spor');
+        router.refresh();
+      } catch {
+        setHata('Bağlantı kurulamadı. Yeniden dene.');
+      }
+    });
+  };
 
   useEffect(() => {
     setSimdi(Date.now());
@@ -117,11 +139,86 @@ export function OturumEkrani({
   const yapilanSet = hareketler.reduce((t, h) => t + Math.min(h.yapilanSetler.length, h.sets), 0);
   const hepsiBitti = yapilanSet >= toplamSet && toplamSet > 0;
 
+  /* Oturuma hareket ekler (yedek makine, fazladan hareket ya da seçiciden YENİ açılan). */
+  const hareketEkle = (e: { id: string; name: string; muscleGroup: MuscleGroup }) => {
+    if (!secenekler.some((x) => x.id === e.id)) {
+      setEklenenler((l) => [...l, { id: e.id, name: e.name, kas: e.muscleGroup }]);
+    }
+    const mevcut = hareketler.findIndex((h) => h.exerciseId === e.id);
+    if (mevcut !== -1) return setSira(mevcut);
+    setHareketler([
+      ...hareketler,
+      {
+        id: `ek-${e.id}`,
+        exerciseId: e.id,
+        ad: e.name,
+        ipucu: null,
+        kas: e.muscleGroup,
+        sets: 3,
+        reps: e.muscleGroup === 'CARDIO' ? '20-30' : '8-12',
+        restSec: 90,
+        yapilanSetler: [],
+        oncekiSet: null,
+        oneri: null,
+      },
+    ]);
+    setSira(hareketler.length);
+  };
+
+  const ekleAlani = (
+    <div className="flex flex-col gap-2">
+      <label className="text-muted flex items-center gap-2 text-sm">
+        <span className="shrink-0">Hareket ekle</span>
+        <select
+          value=""
+          onChange={(o) => {
+            const e = secenekler.find((x) => x.id === o.target.value);
+            if (e) hareketEkle({ id: e.id, name: e.name, muscleGroup: e.kas });
+          }}
+          className="focus-ring rounded-input border-line-strong bg-elevated text-primary h-11 min-w-0 flex-1 border px-3 text-sm"
+        >
+          <option value="">Yedek makine, fazladan hareket…</option>
+          {secenekler.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <YeniHareket eklendi={hareketEkle} />
+    </div>
+  );
+
+  /*
+   * ⚠️ HAREKETSİZ GÜN (2026-11-12): eskiden burada yalnızca "başka bir gün seç" yazıyordu —
+   * ne hareket eklenebiliyordu ne de oturum kapatılabiliyordu, ve açık oturum diğer günlerin
+   * "Başlat"ını da buraya yönlendiriyordu. Artık hareket eklenir ya da boş oturumdan vazgeçilir.
+   */
   if (!hareket) {
     return (
-      <p className="text-muted p-6 text-center text-sm">
-        Bu programda hareket yok. Spor ekranından başka bir gün seç.
-      </p>
+      <div className="flex flex-col gap-4">
+        <div className="rounded-card border-line bg-surface flex flex-col gap-1 border p-4">
+          <h2 className="text-primary text-base font-semibold">Bu günde henüz hareket yok</h2>
+          <p className="text-muted text-sm">
+            Aşağıdan bir hareket seç ya da yenisini ekle. Programa kalıcı eklemek için Spor →
+            Program ekranını kullan.
+          </p>
+        </div>
+        {ekleAlani}
+        {hata && (
+          <p role="alert" className="text-danger text-sm">
+            {hata}
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={bekliyor}
+          onClick={vazgec}
+          className="focus-ring border-line text-body min-h-11 rounded-full border px-4 text-sm font-medium disabled:opacity-60"
+        >
+          Antrenmandan vazgeç
+        </button>
+      </div>
     );
   }
 
@@ -201,30 +298,6 @@ export function OturumEkrani({
         setHata('Bağlantı kurulamadı. Yeniden dene.');
       }
     });
-  };
-
-  const hareketEkle = (id: string) => {
-    const e = egzersizler.find((x) => x.id === id);
-    if (!e) return;
-    const mevcut = hareketler.findIndex((h) => h.exerciseId === id);
-    if (mevcut !== -1) return setSira(mevcut);
-    setHareketler([
-      ...hareketler,
-      {
-        id: `ek-${e.id}`,
-        exerciseId: e.id,
-        ad: e.name,
-        ipucu: null,
-        kas: e.kas,
-        sets: 3,
-        reps: e.kas === 'CARDIO' ? '20-30' : '8-12',
-        restSec: 90,
-        yapilanSetler: [],
-        oncekiSet: null,
-        oneri: null,
-      },
-    ]);
-    setSira(hareketler.length);
   };
 
   const bitir = () => {
@@ -310,23 +383,7 @@ export function OturumEkrani({
         />
       )}
 
-      {!dinleniyor && (
-        <label className="text-muted flex items-center gap-2 text-sm">
-          <span className="shrink-0">Hareket ekle</span>
-          <select
-            value=""
-            onChange={(o) => hareketEkle(o.target.value)}
-            className="focus-ring rounded-input border-line-strong bg-elevated text-primary h-11 min-w-0 flex-1 border px-3 text-sm"
-          >
-            <option value="">Yedek makine, fazladan hareket…</option>
-            {egzersizler.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      {!dinleniyor && ekleAlani}
 
       {rekor && (
         <p

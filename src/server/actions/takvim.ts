@@ -1,9 +1,19 @@
 'use server';
 
-import { takvimEtkinligiSchema, takvimGuncelleSchema, takvimSilSchema } from '@/lib/schemas/takvim';
+import { entityIdSchema } from '@/lib/schemas/common';
+import {
+  sporTakvimSchema,
+  takvimEtkinligiSchema,
+  takvimGuncelleSchema,
+  takvimSilSchema,
+} from '@/lib/schemas/takvim';
+import { GUN_KISA } from '@/lib/takvim/bicim';
 import { db } from '@/server/db';
 import { fail, ok, parseOrFail, writeAuditLog, type ApiResponse } from '@/server/services/_shared';
 import {
+  sporTakvimKaldir,
+  sporTakvimKaydet,
+  SporTakvimCakismasi,
   takvimEtkinligiGuncelle,
   takvimEtkinligiOlustur,
   takvimEtkinligiSil,
@@ -78,4 +88,61 @@ export async function takvimEtkinligiSilAction(raw: unknown) {
   if (!parsed.ok) return parsed.failure;
   const v = parsed.data;
   return kaydet(actorId, 'DELETE', { kapsam: v.kapsam }, () => takvimEtkinligiSil(v), 'takvim:sil');
+}
+
+/**
+ * SPOR PROGRAMINI TAKVİME EKLE / PLANI GÜNCELLE (2026-11-12). Aynı gün zaten takvimdeyse
+ * ikinci seri AÇILMAZ: CONFLICT döner, `fields.mevcutId` mevcut planı taşır ve ekran
+ * "mevcut planı düzenle"yi önerir.
+ */
+export async function sporTakvimKaydetAction(
+  raw: unknown,
+): Promise<ApiResponse<{ id: string; durum: 'yeni' | 'guncellendi' }>> {
+  const actorId = await currentActorId();
+  if (!actorId) return unauthorized();
+  const parsed = parseOrFail(sporTakvimSchema, raw);
+  if (!parsed.ok) return parsed.failure;
+  const v = parsed.data;
+
+  try {
+    const sonuc = await sporTakvimKaydet(v);
+    await writeAuditLog(
+      {
+        actorId,
+        action: sonuc.durum === 'yeni' ? 'CREATE' : 'UPDATE',
+        entity: 'TakvimEtkinligi',
+        entityId: sonuc.id,
+        diff: { programDayId: v.dayId, gunler: v.gunler, hatirlatma: v.hatirlatmalar.length },
+      },
+      db,
+    );
+    return ok(sonuc);
+  } catch (error) {
+    if (error instanceof SporTakvimCakismasi) {
+      const { mevcut } = error;
+      const gunler = mevcut.gunler.map((g) => GUN_KISA[g - 1]).join(', ');
+      return fail(
+        'CONFLICT',
+        `Bu gün zaten takvimde: ${gunler} · ${mevcut.saat}. Yeni plan açmak yerine onu düzenle.`,
+        { mevcutId: mevcut.id },
+      );
+    }
+    if (error instanceof TakvimHatasi) return fail('VALIDATION_ERROR', error.message);
+    return toFailure('takvim:spor', error);
+  }
+}
+
+/** Program gününün takvim planını kaldırır. */
+export async function sporTakvimKaldirAction(raw: unknown): Promise<ApiResponse<{ id: string }>> {
+  const actorId = await currentActorId();
+  if (!actorId) return unauthorized();
+  const parsed = parseOrFail(entityIdSchema, raw);
+  if (!parsed.ok) return parsed.failure;
+  return kaydet(
+    actorId,
+    'DELETE',
+    { kaynak: 'spor-programi' },
+    () => sporTakvimKaldir(parsed.data.id),
+    'takvim:spor-kaldir',
+  );
 }

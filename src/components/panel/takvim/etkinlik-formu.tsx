@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Loader2, Plus, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -18,19 +18,14 @@ import {
   saatMetni,
 } from '@/lib/takvim/bicim';
 import type { TakvimEtkinligiVerisi, TakvimOlusumu } from '@/lib/takvim/gorunum';
-import {
-  EN_COK_HATIRLATMA,
-  EN_UZUN_HATIRLATMA_DK,
-  hatirlatmaEtiketi,
-  SAATLI_SECENEKLER,
-  TUM_GUN_SECENEKLERI,
-  varsayilanHatirlatmalar,
-} from '@/lib/takvim/hatirlatma';
+import { varsayilanHatirlatmalar } from '@/lib/takvim/hatirlatma';
 import { KATEGORI_SIRASI, TAKVIM_KATEGORILERI } from '@/lib/takvim/kategoriler';
 import { haftaninGunu, TEKRAR_YOK, type TekrarKurali } from '@/lib/takvim/tekrar';
 import { cn } from '@/lib/utils/cn';
 import { appWallClockMinutes, toAppDay, type AppDay } from '@/server/services/_shared/app-date';
 import type { ApiResponse, TakvimKategori } from '@/types';
+
+import { HatirlatmaSecici } from './hatirlatma-secici';
 
 /**
  * ETKİNLİK FORMU (2026-11-10). Doğrulama SUNUCUYLA AYNI şema (`takvimEtkinligiSchema`): hata
@@ -121,13 +116,6 @@ function secimdenKural(s: Exclude<TekrarSecimi, 'OZEL'>, bas: AppDay): TekrarKur
   }
 }
 
-const OZEL_BIRIMLER = [
-  { dk: 1, ad: 'dakika' },
-  { dk: 60, ad: 'saat' },
-  { dk: 1440, ad: 'gün' },
-  { dk: 10080, ad: 'hafta' },
-] as const;
-
 const TEKRAR_BIRIMLERI: { tur: TekrarKurali['tur']; ad: string }[] = [
   { tur: 'GUNLUK', ad: 'günde' },
   { tur: 'HAFTALIK', ad: 'haftada' },
@@ -155,8 +143,6 @@ export function EtkinlikFormu({
   const [bekliyor, setBekliyor] = useState(false);
   const [kapsamAdimi, setKapsamAdimi] = useState<unknown>(null);
   const [kapsam, setKapsam] = useState<TakvimKapsami>('tek');
-  const [ozelSayi, setOzelSayi] = useState('');
-  const [ozelBirim, setOzelBirim] = useState(60);
 
   const baslikRef = useRef<HTMLInputElement>(null);
   // Pencere ayrıntıdan düzenlemeye geçince de odak başlıkta olsun (pencere yeniden açılmıyor).
@@ -282,18 +268,6 @@ export function EtkinlikFormu({
     ) : null;
   const hataBagi = (anahtar: string) =>
     hatalar[anahtar] ? { 'aria-invalid': true, 'aria-describedby': alan(`${anahtar}-hata`) } : {};
-
-  const secenekler = (f.tumGun ? TUM_GUN_SECENEKLERI : SAATLI_SECENEKLER).filter(
-    (dk) => !f.hatirlatmalar.includes(dk),
-  );
-  const hatirlatmaEkle = (dk: number) =>
-    guncelle({ hatirlatmalar: [...new Set([...f.hatirlatmalar, dk])].sort((a, b) => a - b) });
-  const ozelHatirlatmaDk = Number(ozelSayi) * ozelBirim;
-  const ozelGecerli =
-    Number.isInteger(Number(ozelSayi)) &&
-    Number(ozelSayi) >= 0 &&
-    ozelSayi !== '' &&
-    ozelHatirlatmaDk <= EN_UZUN_HATIRLATMA_DK;
 
   return (
     <form onSubmit={onayla} noValidate className="flex flex-col gap-4">
@@ -448,98 +422,12 @@ export function EtkinlikFormu({
         </div>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-primary mb-1.5 text-sm font-medium">Hatırlatmalar</legend>
-        {f.hatirlatmalar.length === 0 && (
-          <p className="text-muted text-sm">Hatırlatma yok — bildirim gelmez.</p>
-        )}
-        <ul className="flex flex-col gap-1.5">
-          {f.hatirlatmalar.map((dk) => {
-            const ad = hatirlatmaEtiketi(dk, f.tumGun);
-            return (
-              <li
-                key={dk}
-                className="bg-elevated flex min-h-11 items-center gap-2 rounded-xl pr-1 pl-3 text-sm"
-              >
-                <Bell className="text-muted size-4 shrink-0" aria-hidden="true" />
-                <span className="text-body flex-1">{ad}</span>
-                <button
-                  type="button"
-                  aria-label={`${ad} hatırlatmasını kaldır`}
-                  onClick={() =>
-                    guncelle({ hatirlatmalar: f.hatirlatmalar.filter((x) => x !== dk) })
-                  }
-                  className="focus-ring text-muted hover:text-danger flex size-9 items-center justify-center rounded-full"
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        {f.hatirlatmalar.length < EN_COK_HATIRLATMA && (
-          <div className="flex flex-col gap-2">
-            <select
-              aria-label="Hatırlatma ekle"
-              value=""
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === 'ozel') {
-                  setOzelSayi(f.tumGun ? '3' : '45');
-                  setOzelBirim(f.tumGun ? 1440 : 1);
-                } else if (v) hatirlatmaEkle(Number(v));
-              }}
-              className={SECIM}
-            >
-              <option value="">+ Hatırlatma ekle</option>
-              {secenekler.map((dk) => (
-                <option key={dk} value={dk}>
-                  {hatirlatmaEtiketi(dk, f.tumGun)}
-                </option>
-              ))}
-              <option value="ozel">Özel…</option>
-            </select>
-            {ozelSayi !== '' && (
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  aria-label="Özel hatırlatma süresi"
-                  value={ozelSayi}
-                  onChange={(e) => setOzelSayi(e.target.value)}
-                  className="w-20"
-                />
-                <select
-                  aria-label="Birim"
-                  value={ozelBirim}
-                  onChange={(e) => setOzelBirim(Number(e.target.value))}
-                  className={cn(SECIM, 'w-auto flex-1')}
-                >
-                  {OZEL_BIRIMLER.map((b) => (
-                    <option key={b.dk} value={b.dk}>
-                      {b.ad} önce
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={!ozelGecerli}
-                  onClick={() => {
-                    hatirlatmaEkle(ozelHatirlatmaDk);
-                    setOzelSayi('');
-                  }}
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                  Ekle
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-        {hataAlani('hatirlatmalar')}
-      </fieldset>
+      <HatirlatmaSecici
+        tumGun={f.tumGun}
+        hatirlatmalar={f.hatirlatmalar}
+        degistir={(hatirlatmalar) => guncelle({ hatirlatmalar })}
+        hata={hataAlani('hatirlatmalar')}
+      />
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={alan('konum')}>Konum</Label>

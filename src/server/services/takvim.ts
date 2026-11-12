@@ -1,4 +1,5 @@
 import type {
+  SporTakvimGirdisi,
   TakvimEtkinligiGirdisi,
   TakvimGuncelleGirdisi,
   TakvimSilGirdisi,
@@ -7,6 +8,7 @@ import type { TakvimEtkinligiVerisi, TakvimOlusumu } from '@/lib/takvim/gorunum'
 import { EN_UZUN_HATIRLATMA_DK, type HatirlatmaliEtkinlik } from '@/lib/takvim/hatirlatma';
 import {
   adayMi,
+  haftaninGunu,
   oncekiAdaySayisi,
   olusumlar,
   TEKRAR_YOK,
@@ -20,7 +22,9 @@ import {
   addAppDays,
   appDayStartInstant,
   appDayToDate,
+  appToday,
   appWallClockInstant,
+  appWallClockMinutes,
   dateToAppDay,
   differenceInAppDays,
   toAppDay,
@@ -44,7 +48,15 @@ import {
 
 export class TakvimHatasi extends Error {}
 
-type Satir = TakvimEtkinligi;
+/** `programDay` yalnızca okumada (`include`) geliyor; yazma yolları onsuz satır görüyor. */
+type Satir = TakvimEtkinligi & {
+  programDay?: { id: string; name: string; isArchived: boolean } | null;
+};
+
+/** Okumalarda bağlı program gününün adı ve durumu — "Antrenmana başla" için. */
+const PROGRAM_GUNU = {
+  programDay: { select: { id: true, name: true, isArchived: true } },
+} as const;
 
 function kurali(s: Satir): TekrarKurali {
   return {
@@ -85,6 +97,11 @@ function veri(s: Satir): TakvimEtkinligiVerisi {
     istisnalar: s.istisnalar.map(dateToAppDay),
     hatirlatmalar: s.hatirlatmalar,
     seriId: s.seriId,
+    // Arşivlenmiş güne oturum açılmaz: bağ duruyor ama düğme gösterilmiyor.
+    programGunu:
+      s.programDay && !s.programDay.isArchived
+        ? { id: s.programDay.id, ad: s.programDay.name }
+        : null,
   };
 }
 
@@ -118,6 +135,7 @@ export async function fetchTakvim(
       ],
     },
     orderBy: { baslangic: 'asc' },
+    include: PROGRAM_GUNU,
   });
 
   const etkinlikler: TakvimEtkinligiVerisi[] = [];
@@ -262,7 +280,13 @@ export async function takvimEtkinligiGuncelle(g: TakvimGuncelleGirdisi): Promise
         data: { istisnalar: { push: appDayToDate(g.olusumGun) } },
       });
       return tx.takvimEtkinligi.create({
-        data: { ...alanlar(g, TEKRAR_YOK), ...yeni, istisnalar: [], seriId: s.id },
+        data: {
+          ...alanlar(g, TEKRAR_YOK),
+          ...yeni,
+          istisnalar: [],
+          seriId: s.id,
+          programDayId: s.programDayId,
+        },
         select: { id: true },
       });
     }
@@ -281,6 +305,7 @@ export async function takvimEtkinligiGuncelle(g: TakvimGuncelleGirdisi): Promise
           ...alanlar(g, kural),
           ...yeni,
           istisnalar: s.istisnalar.filter((d) => dateToAppDay(d) >= g.olusumGun),
+          programDayId: s.programDayId,
         },
         select: { id: true },
       });
@@ -337,4 +362,144 @@ export async function takvimEtkinligiSil(g: TakvimSilGirdisi): Promise<{ id: str
     }
     return { id: s.id };
   });
+}
+
+/* ===========================================================================
+ * SPOR PROGRAMI → TAKVİM (2026-11-12)
+ * ======================================================================== */
+
+/**
+ * Bir program gününün takvimdeki planı: haftalık tekrar, aynı saat. Program ekranı bunu
+ * gösterir, düzenler ve kaldırır. Yalnızca serinin KENDİSİ (`seriId` yok) — "yalnızca bu"
+ * düzenlemeleri ayrı bir plan değil.
+ */
+export interface SporTakvimPlani {
+  id: string;
+  gunler: number[];
+  saat: string;
+  sureDk: number;
+  baslangicGun: AppDay;
+  bitisGun: AppDay | null;
+  hatirlatmalar: number[];
+}
+
+/** Seri gelecekte de sürüyor mu: bitişi yok ya da bugünden önce değil. */
+function suruyor(tekrarBitis: Date | null, bugun: AppDay): boolean {
+  return tekrarBitis === null || dateToAppDay(tekrarBitis) >= bugun;
+}
+
+function plan(s: Satir): SporTakvimPlani {
+  const dk = appWallClockMinutes(s.baslangic);
+  return {
+    id: s.id,
+    gunler: s.tekrar === 'HAFTALIK' ? s.tekrarGunleri : [haftaninGunu(toAppDay(s.baslangic))],
+    saat: `${String(Math.floor(dk / 60)).padStart(2, '0')}:${String(dk % 60).padStart(2, '0')}`,
+    sureDk: Math.round((s.bitis.getTime() - s.baslangic.getTime()) / 60_000),
+    baslangicGun: toAppDay(s.baslangic),
+    bitisGun: s.tekrarBitis ? dateToAppDay(s.tekrarBitis) : null,
+    hatirlatmalar: s.hatirlatmalar,
+  };
+}
+
+/** Program günlerinin SÜREN planları, güne göre. */
+export async function fetchSporTakvimPlanlari(
+  dayIds: string[],
+  bugun: AppDay = appToday(),
+  client = db,
+): Promise<Record<string, SporTakvimPlani[]>> {
+  if (dayIds.length === 0) return {};
+  const satirlar = await client.takvimEtkinligi.findMany({
+    where: { programDayId: { in: dayIds }, seriId: null },
+    orderBy: { baslangic: 'asc' },
+  });
+  const sonuc: Record<string, SporTakvimPlani[]> = {};
+  for (const s of satirlar) {
+    if (!s.programDayId || !suruyor(s.tekrarBitis, bugun)) continue;
+    (sonuc[s.programDayId] ??= []).push(plan(s));
+  }
+  return sonuc;
+}
+
+/** Aynı gün zaten takvimdeyse — sessizce ikinci seri açılmaz; çağıran düzenlemeyi önerir. */
+export class SporTakvimCakismasi extends Error {
+  constructor(readonly mevcut: SporTakvimPlani) {
+    super('spor takvimi: bu gün zaten takvimde');
+    this.name = 'SporTakvimCakismasi';
+  }
+}
+
+/** Başlangıçtan itibaren seçili hafta günlerinden İLKİ — serinin ilk oluşumu. */
+export function ilkAntrenmanGunu(baslangicGun: AppDay, gunler: readonly number[]): AppDay {
+  for (let i = 0; i < 7; i += 1) {
+    const gun = addAppDays(baslangicGun, i);
+    if (gunler.includes(haftaninGunu(gun))) return gun;
+  }
+  return baslangicGun;
+}
+
+/**
+ * Program gününü takvime ekler ya da (`id` ile) planını günceller. Etkinlik: kategori Spor,
+ * başlık günün adı, haftalık tekrar, seçili günler, aynı saat ve süre.
+ */
+export async function sporTakvimKaydet(
+  g: SporTakvimGirdisi,
+  bugun: AppDay = appToday(),
+): Promise<{ id: string; durum: 'yeni' | 'guncellendi' }> {
+  return db.$transaction(async (tx) => {
+    const gun = await tx.programDay.findUnique({
+      where: { id: g.dayId },
+      select: { name: true, focus: true, isArchived: true },
+    });
+    if (!gun || gun.isArchived) throw new TakvimHatasi('Program günü bulunamadı.');
+
+    const ilk = ilkAntrenmanGunu(g.baslangicGun, g.gunler);
+    if (g.bitisGun !== null && g.bitisGun < ilk) {
+      throw new TakvimHatasi('Bitiş tarihine kadar seçili günlerden hiçbiri gelmiyor.');
+    }
+    const baslangic = appWallClockInstant(ilk, saatDakika(g.saat));
+    const veri = {
+      baslik: gun.name,
+      aciklama: gun.focus,
+      kategori: 'SPOR' as const,
+      tumGun: false,
+      baslangic,
+      bitis: new Date(baslangic.getTime() + g.sureDk * 60_000),
+      tekrar: 'HAFTALIK' as const,
+      tekrarAralik: 1,
+      tekrarGunleri: [...g.gunler],
+      tekrarBitis: g.bitisGun ? appDayToDate(g.bitisGun) : null,
+      tekrarSayisi: null,
+      hatirlatmalar: g.hatirlatmalar,
+      programDayId: g.dayId,
+    };
+
+    if (g.id) {
+      const s = await tx.takvimEtkinligi.findUnique({ where: { id: g.id } });
+      if (!s || s.programDayId !== g.dayId) throw new TakvimHatasi(BULUNAMADI);
+      // Eski istisnalar ("bu hafta yok") yeni plana taşınmaz: günler/saat değişmiş olabilir.
+      await tx.takvimEtkinligi.update({ where: { id: s.id }, data: { ...veri, istisnalar: [] } });
+      return { id: s.id, durum: 'guncellendi' };
+    }
+
+    const mevcutlar = await tx.takvimEtkinligi.findMany({
+      where: { programDayId: g.dayId, seriId: null },
+      orderBy: { baslangic: 'asc' },
+    });
+    const suren = mevcutlar.find((m) => suruyor(m.tekrarBitis, bugun));
+    if (suren) throw new SporTakvimCakismasi(plan(suren));
+
+    const { id } = await tx.takvimEtkinligi.create({
+      data: { ...veri, istisnalar: [] },
+      select: { id: true },
+    });
+    return { id, durum: 'yeni' };
+  });
+}
+
+/** Planı takvimden kaldırır (seri ve "yalnızca bu" düzenlemeleri). Geçmiş antrenmanlar yerinde. */
+export async function sporTakvimKaldir(id: string): Promise<{ id: string }> {
+  const s = await db.takvimEtkinligi.findUnique({ where: { id }, select: { programDayId: true } });
+  if (!s || !s.programDayId) throw new TakvimHatasi(BULUNAMADI);
+  await db.takvimEtkinligi.delete({ where: { id } });
+  return { id };
 }

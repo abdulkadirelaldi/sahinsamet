@@ -132,6 +132,8 @@ export interface TakvimEtkinligiVerisi {
   istisnalar: AppDay[];
   hatirlatmalar: number[];
   seriId: string | null;
+  /** Bağlı spor programı günü (arşivlenmişse `null`) — "Antrenmana başla" (2026-11-12). */
+  programGunu: { id: string; ad: string } | null;
 }
 
 /** Oluşum `gun` gününe değiyor mu. */

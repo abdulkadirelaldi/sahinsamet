@@ -73,15 +73,17 @@ function exerciseClient(rows: unknown[] = [], total = 0) {
   const findMany = vi.fn().mockResolvedValue(rows);
   const count = vi.fn().mockResolvedValue(total);
   const findUnique = vi.fn().mockResolvedValue(rows[0] ?? null);
+  const findFirst = vi.fn().mockResolvedValue(null);
   const create = vi.fn().mockResolvedValue(rows[0]);
   const update = vi.fn().mockResolvedValue(rows[0]);
   return {
     findMany,
     count,
     findUnique,
+    findFirst,
     create,
     update,
-    client: { exercise: { findMany, count, findUnique, create, update } } as never,
+    client: { exercise: { findMany, count, findUnique, findFirst, create, update } } as never,
   };
 }
 
@@ -148,6 +150,8 @@ describe('Exercise — kütüphane', () => {
 
   it('ekleme ve güncelleme DTO döndürüyor — ham satır DEĞİL', async () => {
     const h = exerciseClient([EX_SATIR]);
+    // Kütüphane boş: ad çakışması taraması bir şey bulmasın.
+    h.findMany.mockResolvedValue([]);
     const olusan = await createExercise(
       createExerciseSchema.parse({ name: 'Bench Press', muscleGroup: 'CHEST' }),
       h.client,

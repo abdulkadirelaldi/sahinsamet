@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition, type FormEvent } from 'react';
 
 import { HAFTA_GUNLERI_KISA } from '@/components/panel/hayat-bicim';
+import { YeniHareket } from '@/components/panel/yeni-hareket';
 import { cn } from '@/lib/utils/cn';
 import {
   addProgramHareketAction,
@@ -315,26 +316,37 @@ export function ProgramHareketleri({
   gun: ProgramGunDuzenDto;
   egzersizler: { id: string; name: string }[];
 }) {
-  const { hata, setHata, bekliyor, calistir } = useEylem();
+  const { hata, setHata, bekliyor, calistir, router } = useEylem();
   const [secili, setSecili] = useState('');
   const [sets, setSets] = useState('3');
   const [reps, setReps] = useState('8-12');
   const [rest, setRest] = useState('90');
+  /* Seçiciden yeni açılan hareketler: sunucu listesi yenilenene kadar seçenekte dursun. */
+  const [eklenenler, setEklenenler] = useState<{ id: string; name: string }[]>([]);
   const programda = new Set(gun.hareketler.map((h) => h.exerciseId));
+  const secenekler = [
+    ...egzersizler,
+    ...eklenenler.filter((e) => !egzersizler.some((x) => x.id === e.id)),
+  ];
 
   const ekle = (o: FormEvent) => {
     o.preventDefault();
     if (!secili) return setHata('Hareket seç.');
-    calistir(() =>
-      addProgramHareketAction({
-        dayId: gun.id,
-        exerciseId: secili,
-        sets: sayiOku(sets),
-        reps,
-        restSec: sayiOku(rest),
-      }),
+    calistir(
+      () =>
+        addProgramHareketAction({
+          dayId: gun.id,
+          exerciseId: secili,
+          sets: sayiOku(sets),
+          reps,
+          restSec: sayiOku(rest),
+        }),
+      // Seçim yalnızca BAŞARIDA temizlenir: hata olursa kullanıcı yeniden seçmek zorunda kalmasın.
+      () => {
+        setSecili('');
+        router.refresh();
+      },
     );
-    setSecili('');
   };
 
   return (
@@ -360,7 +372,7 @@ export function ProgramHareketleri({
           Hareket ekle
           <select value={secili} onChange={(o) => setSecili(o.target.value)} className={ALAN}>
             <option value="">Seç…</option>
-            {egzersizler
+            {secenekler
               .filter((e) => !programda.has(e.id))
               .map((e) => (
                 <option key={e.id} value={e.id}>
@@ -369,6 +381,13 @@ export function ProgramHareketleri({
               ))}
           </select>
         </label>
+        <YeniHareket
+          eklendi={(e) => {
+            setEklenenler((l) => [...l, { id: e.id, name: e.name }]);
+            setSecili(e.id);
+            setHata(null);
+          }}
+        />
         <HareketAlanlari
           ad="Yeni hareket"
           sets={sets}

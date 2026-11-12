@@ -12,6 +12,8 @@ const { authMock, writesRevokedMock, servis } = vi.hoisted(() => ({
     takvimEtkinligiOlustur: vi.fn(),
     takvimEtkinligiGuncelle: vi.fn(),
     takvimEtkinligiSil: vi.fn(),
+    sporTakvimKaydet: vi.fn(),
+    sporTakvimKaldir: vi.fn(),
   },
 }));
 
@@ -28,9 +30,14 @@ vi.mock('@/server/services/takvim', async (gercek) => ({
   ...servis,
 }));
 
-const { TakvimHatasi } = await import('@/server/services/takvim');
-const { takvimEtkinligiGuncelleAction, takvimEtkinligiOlusturAction, takvimEtkinligiSilAction } =
-  await import('@/server/actions/takvim');
+const { SporTakvimCakismasi, TakvimHatasi } = await import('@/server/services/takvim');
+const {
+  sporTakvimKaldirAction,
+  sporTakvimKaydetAction,
+  takvimEtkinligiGuncelleAction,
+  takvimEtkinligiOlusturAction,
+  takvimEtkinligiSilAction,
+} = await import('@/server/actions/takvim');
 
 const ID = 'ckabcdefghijklmnopqrstuv';
 const GIRDI = {
@@ -124,5 +131,71 @@ describe('hata eşleme', () => {
       expect(sonuc.error.code).toBe('INTERNAL_ERROR');
       expect(sonuc.error.message).not.toContain('pg');
     }
+  });
+});
+
+describe('spor programını takvime ekle (2026-11-12)', () => {
+  const SPOR = {
+    dayId: ID,
+    gunler: [1, 4],
+    saat: '18:30',
+    sureDk: 75,
+    baslangicGun: '2026-11-12',
+    bitisGun: null,
+    hatirlatmalar: [30],
+  };
+
+  it('oturum yoksa yazma yok', async () => {
+    authMock.mockResolvedValue(null);
+    expect((await sporTakvimKaydetAction(SPOR)).ok).toBe(false);
+    expect((await sporTakvimKaldirAction({ id: ID })).ok).toBe(false);
+    expect(servis.sporTakvimKaydet).not.toHaveBeenCalled();
+  });
+
+  it('gün seçilmezse alan hatası', async () => {
+    const sonuc = await sporTakvimKaydetAction({ ...SPOR, gunler: [] });
+    expect(sonuc.ok === false && sonuc.error.fields?.gunler).toBe('En az bir gün seç.');
+  });
+
+  it('başarıda denetime program günü yazılır, CREATE', async () => {
+    servis.sporTakvimKaydet.mockResolvedValue({ id: 'plan', durum: 'yeni' });
+    const sonuc = await sporTakvimKaydetAction(SPOR);
+    expect(sonuc).toEqual({ ok: true, data: { id: 'plan', durum: 'yeni' } });
+    expect(dbMock.auditLog.create.mock.calls[0]?.[0].data).toMatchObject({
+      action: 'CREATE',
+      entity: 'TakvimEtkinligi',
+      entityId: 'plan',
+    });
+  });
+
+  it('⚠️ aynı gün zaten takvimde: CONFLICT, mevcut plan kimliği ve özeti', async () => {
+    servis.sporTakvimKaydet.mockRejectedValue(
+      new SporTakvimCakismasi({
+        id: 'mevcut',
+        gunler: [1, 4],
+        saat: '18:30',
+        sureDk: 75,
+        baslangicGun: '2026-11-12',
+        bitisGun: null,
+        hatirlatmalar: [],
+      }),
+    );
+    const sonuc = await sporTakvimKaydetAction(SPOR);
+    expect(sonuc.ok === false && sonuc.error.code).toBe('CONFLICT');
+    expect(sonuc.ok === false && sonuc.error.message).toContain('Pzt, Per · 18:30');
+    expect(sonuc.ok === false && sonuc.error.fields?.mevcutId).toBe('mevcut');
+    expect(dbMock.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('servis doğrulama hatası kullanıcıya metin olarak döner', async () => {
+    servis.sporTakvimKaydet.mockRejectedValue(new TakvimHatasi('Program günü bulunamadı.'));
+    const sonuc = await sporTakvimKaydetAction(SPOR);
+    expect(sonuc.ok === false && sonuc.error.message).toBe('Program günü bulunamadı.');
+  });
+
+  it('kaldırma DELETE denetimi yazar', async () => {
+    servis.sporTakvimKaldir.mockResolvedValue({ id: ID });
+    expect((await sporTakvimKaldirAction({ id: ID })).ok).toBe(true);
+    expect(dbMock.auditLog.create.mock.calls[0]?.[0].data).toMatchObject({ action: 'DELETE' });
   });
 });
