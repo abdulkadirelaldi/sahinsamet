@@ -242,6 +242,56 @@ const komutlar: Record<string, (arg?: string) => Promise<unknown>> = {
     return { silinen: silinen.count };
   },
 
+  /**
+   * Spor + takvim e2e'sinin izlerini siler (2026-11-12) — program günü ve egzersiz AD önekine
+   * göre: günün takvim planları, oturumları (setleriyle), günün kendisi ve hareketler.
+   */
+  async sporSondaSil(arg) {
+    const { onek } = JSON.parse(arg ?? '{}') as { onek: string };
+    if (!onek || !onek.startsWith('e2e-'))
+      throw new Error('sporSondaSil: `e2e-` ile başlayan önek zorunlu.');
+    const gunler = await db.programDay.findMany({
+      where: { name: { startsWith: onek } },
+      select: { id: true },
+    });
+    const gunIdler = gunler.map((g) => g.id);
+    const egzersizler = await db.exercise.findMany({
+      where: { name: { startsWith: onek } },
+      select: { id: true },
+    });
+    const exIdler = egzersizler.map((e) => e.id);
+    const takvim = await db.takvimEtkinligi.deleteMany({
+      where: { OR: [{ programDayId: { in: gunIdler } }, { baslik: { startsWith: onek } }] },
+    });
+    // Elle açılan antrenmanın programı yok: bu hareketlerin setlerinin antrenmanları da izdir.
+    const elle = await db.workoutSet.findMany({
+      where: { exerciseId: { in: exIdler } },
+      select: { workoutId: true },
+    });
+    const set = await db.workoutSet.deleteMany({
+      where: {
+        OR: [{ exerciseId: { in: exIdler } }, { workout: { programDayId: { in: gunIdler } } }],
+      },
+    });
+    const bosElle = await db.workout.deleteMany({
+      where: { id: { in: elle.map((w) => w.workoutId) }, sets: { none: {} } },
+    });
+    const rekor = await db.personalRecord.deleteMany({ where: { exerciseId: { in: exIdler } } });
+    const antrenman = await db.workout.deleteMany({ where: { programDayId: { in: gunIdler } } });
+    const gun = await db.programDay.deleteMany({ where: { id: { in: gunIdler } } });
+    const egzersiz = await db.exercise.deleteMany({ where: { id: { in: exIdler } } });
+    return {
+      silinen:
+        takvim.count +
+        set.count +
+        rekor.count +
+        antrenman.count +
+        bosElle.count +
+        gun.count +
+        egzersiz.count,
+    };
+  },
+
   /** Hızlı ekleme e2e'sinin harcamalarını siler — AD önekine göre (2026-10-30). */
   async hizliSondaSil(arg) {
     const { onek } = JSON.parse(arg ?? '{}') as { onek: string };

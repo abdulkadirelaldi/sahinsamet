@@ -2679,6 +2679,14 @@ Sahibi iş yönetimini ayrı bir sistemden yürütüyor; bu panelin kişisel olm
 - **Gizlilik/denetim:** her mutasyon `AuditLog`a yazılır ama yalnızca alan sayıları, tekrar türü ve kapsam — başlık, konum, açıklama YAZILMAZ (doktor randevusu sağlık verisi olabilir). `takvim` modülü `kisisel-veri-erisimi` kapısındaki kişisel modüller listesinde: servis ve eylem panel ile sunucu katmanı dışında içe aktarılamaz.
 - **Bağımlılık yok:** ızgara Tailwind ile elle; FullCalendar ve benzeri eklenmedi. Renkler `dark:` varyantı olmadan iki temada okunur (dolu zemin beyaz yazı, açık zemin `/15` saydamlık).
 
+### Ek (2026-11-12) — Spor ↔ Takvim, hareket ekleme denetimi
+
+- **Spor programı takvimde:** program günü (ör. "İtiş") Spor → Program → gün → "Takvime ekle" ile haftalık tekrarlanan bir Spor etkinliği olur (hafta günleri, saat, süre — varsayılan 75 dk —, başlangıç, isteğe bağlı bitiş, takvimin hatırlatma seçicisi). Başlık günün adı, açıklama odağı. Her gün kendi günlerine ayrı planlanır.
+- **Şema:** `TakvimEtkinligi.programDayId` (isteğe bağlı, `onDelete: SetNull`, eklemeli göç). "Yalnızca bu" / "Bu ve sonrakiler" bölmeleri bağı taşır. Etkinlik ayrıntısında "Antrenmana başla" mevcut oturum başlatma eylemini çağırır; arşivlenmiş günde gösterilmez.
+- **Çift yok:** aynı gün için süren (bitişi geçmemiş) bir plan varken ikinci ekleme CONFLICT döner, ekran mevcut planı düzenlemeyi önerir. Plan güncellemesi istisnaları sıfırlar (günler/saat değişmiş olabilir).
+- **Hareket adı tekilliği Türkçe harf duyarsız:** `name @unique` harfe duyarlı ve Postgres `insensitive` "I/ı/İ/i"yi Türkçe eşlemiyor; servis önce birebir (harf duyarsız) sorgu, sonra bellekte `egzersizAdAnahtari` karşılaştırması yapar. Arşivdeki eş ad "arşivde" der ve geri almayı önerir; seçicilerden hızlı eklemede eş ad yeni satır açmaz (aktifse seçilir, arşivdeyse arşivden çıkarılır).
+- **Boş oturum:** hareketsiz günün oturum ekranında hareket eklenebilir ya da oturumdan vazgeçilir (set yoksa silinir). Bugün başka bir program gününden açılmış ve HİÇ set girilmemiş oturum yeni günün "Başlat"ını kilitlemez (silinir); set girilmiş oturum korunur.
+
 ---
 
 ## ADR-049 — Public Site Tek Sayfa: Profil + Sosyal Bağlantılar

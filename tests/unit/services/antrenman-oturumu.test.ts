@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  abandonSession,
   createSuggestedProgram,
   fetchProgram,
   fetchRecentSessions,
@@ -131,6 +132,74 @@ describe('startSession', () => {
       programDay: { findUnique: vi.fn().mockResolvedValue(null) },
     } as never;
     await expect(startSession('x', client)).rejects.toBeInstanceOf(OturumHatasi);
+  });
+});
+
+describe('startSession · BOŞ OTURUM TUZAĞI (2026-11-12)', () => {
+  const acikOturum = (e: Record<string, unknown>) => ({
+    id: 'bos',
+    date: new Date('2026-11-12T00:00:00Z'),
+    startedAt: new Date('2026-11-12T08:00:00Z'),
+    programDayId: 'bosGun',
+    programDay: { name: 'Hareketsiz gün' },
+    _count: { sets: 0 },
+    ...e,
+  });
+  const kurulum = (acik: Record<string, unknown>) => {
+    const create = vi.fn().mockResolvedValue({ id: 'yeni' });
+    const del = vi.fn();
+    return {
+      create,
+      del,
+      client: {
+        workout: { findFirst: vi.fn().mockResolvedValue(acik), create, delete: del },
+        programDay: { findUnique: vi.fn().mockResolvedValue({ id: 'itis', exercises: [] }) },
+      } as never,
+    };
+  };
+
+  it('⚠️ bugün BAŞKA günden açılmış, set girilmemiş oturum silinir ve istenen gün başlar', async () => {
+    const k = kurulum(acikOturum({}));
+    expect(await startSession('itis', k.client, '2026-11-12')).toEqual({ id: 'yeni', yeni: true });
+    expect(k.del).toHaveBeenCalledWith({ where: { id: 'bos' } });
+  });
+
+  it('aynı günün boş oturumu korunur (ikinci oturum açılmaz)', async () => {
+    const k = kurulum(acikOturum({ programDayId: 'itis' }));
+    expect(await startSession('itis', k.client, '2026-11-12')).toEqual({ id: 'bos', yeni: false });
+    expect(k.del).not.toHaveBeenCalled();
+  });
+
+  it('set girilmiş oturum SİLİNMEZ — yapılan iş kaybolmaz', async () => {
+    const k = kurulum(acikOturum({ _count: { sets: 2 } }));
+    expect(await startSession('itis', k.client, '2026-11-12')).toEqual({ id: 'bos', yeni: false });
+    expect(k.del).not.toHaveBeenCalled();
+  });
+});
+
+describe('abandonSession — boş oturumdan vazgeç (2026-11-12)', () => {
+  const istemci = (w: unknown) => {
+    const del = vi.fn();
+    return {
+      del,
+      client: { workout: { findUnique: vi.fn().mockResolvedValue(w), delete: del } } as never,
+    };
+  };
+
+  it('set yoksa kayıt silinir', async () => {
+    const k = istemci({ startedAt: new Date(), finishedAt: null, _count: { sets: 0 } });
+    await abandonSession('w1', k.client);
+    expect(k.del).toHaveBeenCalledWith({ where: { id: 'w1' } });
+  });
+
+  it.each([
+    ['set varsa', { startedAt: new Date(), finishedAt: null, _count: { sets: 1 } }, 'SETLI'],
+    ['bitmişse', { startedAt: new Date(), finishedAt: new Date(), _count: { sets: 0 } }, 'BITMIS'],
+    ['yoksa', null, 'OTURUM_YOK'],
+  ])('%s silinmez', async (_ad, w, sebep) => {
+    const k = istemci(w);
+    await expect(abandonSession('w1', k.client)).rejects.toMatchObject({ sebep });
+    expect(k.del).not.toHaveBeenCalled();
   });
 });
 

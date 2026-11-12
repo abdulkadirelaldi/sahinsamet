@@ -5,11 +5,14 @@ import { db } from '@/server/db';
 import {
   archiveExercise,
   createExercise,
+  EgzersizCakismasi,
+  hizliEgzersizEkle,
   updateExercise,
   type ExerciseDto,
 } from '@/server/services/exercise';
 import {
   buildDiff,
+  fail,
   ok,
   parseOrFail,
   writeAuditLog,
@@ -52,6 +55,23 @@ const ZATEN_VAR = {
   fields: { name: 'Bu egzersiz adı zaten kullanılıyor.' },
 };
 
+/**
+ * Ad çakışması → CONFLICT (2026-11-12). Çakışan hareket ARŞİVDEYSE bunu SÖYLER ve kimliğini
+ * `fields.arsivdekiId`de verir: form "Arşivden çıkar" düğmesi gösterir. Eskiden yalnızca
+ * "zaten var" deniyordu, hareket listede görünmüyordu ve sahibi çıkmaza giriyordu.
+ * (`arsivdekiId` form alanı değil — kabuk şemada olmayan anahtarı alana basmıyor.)
+ */
+function cakisma(error: EgzersizCakismasi) {
+  const { mevcut } = error;
+  if (!mevcut.isArchived) {
+    return fail('CONFLICT', ZATEN_VAR.message, {
+      name: `“${mevcut.name}” adlı hareket zaten var.`,
+    });
+  }
+  const mesaj = `“${mevcut.name}” arşivde. Yeniden eklemek yerine arşivden çıkarabilirsin.`;
+  return fail('CONFLICT', mesaj, { name: mesaj, arsivdekiId: mevcut.id });
+}
+
 export async function createExerciseAction(raw: unknown): Promise<ApiResponse<ExerciseDto>> {
   const actorId = await currentActorId();
   if (!actorId) return unauthorized();
@@ -75,6 +95,7 @@ export async function createExerciseAction(raw: unknown): Promise<ApiResponse<Ex
 
     return ok(dto);
   } catch (error) {
+    if (error instanceof EgzersizCakismasi) return cakisma(error);
     return toFailure('exercise:create', error, { conflict: ZATEN_VAR });
   }
 }
@@ -105,6 +126,7 @@ export async function updateExerciseAction(raw: unknown): Promise<ApiResponse<Ex
 
     return ok(dto);
   } catch (error) {
+    if (error instanceof EgzersizCakismasi) return cakisma(error);
     return toFailure('exercise:update', error, { conflict: ZATEN_VAR });
   }
 }
@@ -141,5 +163,38 @@ export async function archiveExerciseAction(raw: unknown): Promise<ApiResponse<E
     return ok(dto);
   } catch (error) {
     return toFailure('exercise:archive', error);
+  }
+}
+
+/**
+ * Seçicilerden "yeni hareket" (2026-11-12): oluşturur, ya da aynı adlı hareketi döndürür
+ * (arşivdeyse arşivden çıkarır). Denetim yalnızca bir şey DEĞİŞTİYSE yazılır.
+ */
+export async function hizliEgzersizEkleAction(
+  raw: unknown,
+): Promise<ApiResponse<{ egzersiz: ExerciseDto; durum: 'yeni' | 'mevcut' | 'arsivden' }>> {
+  const actorId = await currentActorId();
+  if (!actorId) return unauthorized();
+
+  const parsed = parseOrFail(createExerciseSchema, raw);
+  if (!parsed.ok) return parsed.failure;
+
+  try {
+    const sonuc = await hizliEgzersizEkle(parsed.data);
+    if (sonuc.durum !== 'mevcut') {
+      await writeAuditLog(
+        {
+          actorId,
+          action: sonuc.durum === 'yeni' ? 'CREATE' : 'UPDATE',
+          entity: 'Exercise',
+          entityId: sonuc.egzersiz.id,
+          diff: sonuc.durum === 'yeni' ? buildDiff(null, parsed.data) : { isArchived: false },
+        },
+        db,
+      );
+    }
+    return ok(sonuc);
+  } catch (error) {
+    return toFailure('exercise:hizli', error, { conflict: ZATEN_VAR });
   }
 }

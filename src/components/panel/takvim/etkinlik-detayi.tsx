@@ -3,6 +3,7 @@
 import { Bell, CalendarDays, Loader2, MapPin, Pencil, Repeat, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { BaslatDugmesi } from '@/components/panel/spor-dugmeleri';
 import { Button } from '@/components/ui/button';
 import { FormAlert } from '@/components/ui/form-error';
 import type { TakvimKapsami } from '@/lib/schemas/takvim';
@@ -117,6 +118,20 @@ export function EtkinlikDetayi({
         <p className="text-body bg-elevated rounded-xl p-3 text-sm whitespace-pre-line">
           {etkinlik.aciklama}
         </p>
+      )}
+      {etkinlik.programGunu && (
+        <div className="border-line bg-elevated rounded-card flex items-center justify-between gap-3 border p-3">
+          <p className="text-body min-w-0 text-sm">
+            Spor programı:{' '}
+            <span className="text-primary font-medium">{etkinlik.programGunu.ad}</span>
+          </p>
+          <BaslatDugmesi
+            dayId={etkinlik.programGunu.id}
+            vurgulu
+            etiket="Antrenmana başla"
+            yerineYaz
+          />
+        </div>
       )}
       {etkinlik.seriId && (
         <p className="text-muted text-xs">

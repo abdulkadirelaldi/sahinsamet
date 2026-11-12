@@ -12,7 +12,23 @@ import {
 import { cn } from '@/lib/utils/cn';
 
 /** Program gününden oturum başlatır; açık oturum varsa ona gider. */
-export function BaslatDugmesi({ dayId, vurgulu }: { dayId: string; vurgulu?: boolean }) {
+export function BaslatDugmesi({
+  dayId,
+  vurgulu,
+  etiket = 'Başlat',
+  yerineYaz,
+}: {
+  dayId: string;
+  vurgulu?: boolean;
+  /** Takvim etkinliğinde "Antrenmana başla" (2026-11-12). */
+  etiket?: string;
+  /**
+   * Geri jestiyle kapanan bir pencerenin içindeyse `true`: oturuma `replace` ile gidilir ve
+   * pencerenin eklediği geçmiş kaydının yerine yazılır (`useGeriTusuylaKapat`) — oturumdan
+   * geri dönüş tek adımda takvime iner.
+   */
+  yerineYaz?: boolean;
+}) {
   const router = useRouter();
   const [hata, setHata] = useState<string | null>(null);
   const [bekliyor, basla] = useTransition();
@@ -28,7 +44,9 @@ export function BaslatDugmesi({ dayId, vurgulu }: { dayId: string; vurgulu?: boo
             try {
               const sonuc = await startSessionAction({ dayId });
               if (!sonuc.ok) return setHata(sonuc.error.message);
-              router.push(`/panel/spor/oturum/${sonuc.data.id}`);
+              const adres = `/panel/spor/oturum/${sonuc.data.id}`;
+              if (yerineYaz) router.replace(adres);
+              else router.push(adres);
             } catch {
               setHata('Bağlantı kurulamadı. Yeniden dene.');
             }
@@ -40,7 +58,7 @@ export function BaslatDugmesi({ dayId, vurgulu }: { dayId: string; vurgulu?: boo
         )}
       >
         <Play className="size-4" aria-hidden="true" />
-        {bekliyor ? 'Açılıyor…' : 'Başlat'}
+        {bekliyor ? 'Açılıyor…' : etiket}
       </button>
       {hata && (
         <p role="alert" className="text-danger text-xs">

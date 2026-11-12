@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import type * as z from 'zod';
 
 import { Alan } from '@/components/panel/alan';
@@ -11,7 +12,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { createExerciseSchema } from '@/lib/schemas/exercise';
-import { createExerciseAction, updateExerciseAction } from '@/server/actions/exercise';
+import {
+  archiveExerciseAction,
+  createExerciseAction,
+  updateExerciseAction,
+} from '@/server/actions/exercise';
 import type { ExerciseDto } from '@/server/services/exercise';
 
 /**
@@ -39,11 +44,17 @@ const SECIM_SINIFI =
 export function EgzersizFormu({ egzersiz }: { egzersiz?: ExerciseDto }) {
   const router = useRouter();
   const duzenleme = egzersiz !== undefined;
+  /* Aynı adlı hareket arşivdeyse kimliği — "Arşivden çıkar" düğmesi (2026-11-12). */
+  const [arsivdeki, setArsivdeki] = useState<string | null>(null);
+  const [geriAlHata, setGeriAlHata] = useState<string | null>(null);
+  const [geriAliniyor, setGeriAliniyor] = useState(false);
 
   const kaydet = async (degerler: EgzersizFormGirdi) => {
+    setArsivdeki(null);
     const sonuc = egzersiz
       ? await updateExerciseAction({ ...degerler, id: egzersiz.id })
       : await createExerciseAction(degerler);
+    if (!sonuc.ok) setArsivdeki(sonuc.error.fields?.arsivdekiId ?? null);
 
     if (sonuc.ok) {
       router.refresh();
@@ -137,6 +148,38 @@ export function EgzersizFormu({ egzersiz }: { egzersiz?: ExerciseDto }) {
             </Alan>
           </div>
         </FormKabugu>
+
+        {arsivdeki && (
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="self-start"
+              disabled={geriAliniyor}
+              onClick={async () => {
+                setGeriAliniyor(true);
+                setGeriAlHata(null);
+                try {
+                  const sonuc = await archiveExerciseAction({ id: arsivdeki, isArchived: false });
+                  if (!sonuc.ok) return setGeriAlHata(sonuc.error.message);
+                  router.push(`/panel/spor/egzersizler/${arsivdeki}`);
+                  router.refresh();
+                } catch {
+                  setGeriAlHata('Bağlantı kurulamadı. Yeniden dene.');
+                } finally {
+                  setGeriAliniyor(false);
+                }
+              }}
+            >
+              Arşivden çıkar ve aç
+            </Button>
+            {geriAlHata && (
+              <p role="alert" className="text-danger text-sm">
+                {geriAlHata}
+              </p>
+            )}
+          </div>
+        )}
 
         <Button
           variant="ghost"

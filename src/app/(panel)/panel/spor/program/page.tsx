@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { HAFTA_GUNLERI_KISA } from '@/components/panel/hayat-bicim';
 import { ProgramGunFormu } from '@/components/panel/program-editoru';
 import { Topbar } from '@/components/panel/topbar';
+import { sporPlanOzeti } from '@/lib/takvim/spor';
 import { fetchProgram } from '@/server/services/antrenman-oturumu';
+import { fetchSporTakvimPlanlari } from '@/server/services/takvim';
 
 export const metadata: Metadata = {
   title: 'Programı düzenle',
@@ -14,6 +16,7 @@ export const metadata: Metadata = {
 /** `/panel/spor/program` — program günleri ve yeni gün (2026-11-01). */
 export default async function ProgramPage() {
   const gunler = await fetchProgram();
+  const planlar = await fetchSporTakvimPlanlari(gunler.map((g) => g.id));
 
   return (
     <>
@@ -34,6 +37,11 @@ export default async function ProgramPage() {
                         {g.haftaGunu ? HAFTA_GUNLERI_KISA[g.haftaGunu - 1] : 'Serbest'} ·{' '}
                         {g.hareketler.length} hareket
                       </span>
+                      {(planlar[g.id] ?? []).map((p) => (
+                        <span key={p.id} className="text-muted text-xs">
+                          📅 {sporPlanOzeti(p)}
+                        </span>
+                      ))}
                     </span>
                     <span className="text-accent shrink-0 text-sm font-medium">Düzenle →</span>
                   </Link>

@@ -7,6 +7,7 @@ import * as z from 'zod';
 import { cuidSchema, entityIdSchema } from '@/lib/schemas';
 import { db } from '@/server/db';
 import {
+  abandonSession,
   createSuggestedProgram,
   finishSession,
   OturumHatasi,
@@ -26,6 +27,8 @@ const baslatSchema = z.object({ dayId: cuidSchema });
 function oturumHatasi(error: OturumHatasi) {
   if (error.sebep === 'GUN_YOK') return fail('NOT_FOUND', 'Program günü bulunamadı.');
   if (error.sebep === 'BITMIS') return fail('CONFLICT', 'Bu antrenman zaten bitirilmiş.');
+  if (error.sebep === 'SETLI')
+    return fail('CONFLICT', 'Bu antrenmanda set var; silmek yerine bitir.');
   return fail('NOT_FOUND', 'Antrenman bulunamadı.');
 }
 
@@ -115,5 +118,32 @@ export async function finishSessionAction(
   } catch (error) {
     if (error instanceof OturumHatasi) return oturumHatasi(error);
     return toFailure('workout:finish', error);
+  }
+}
+
+/** Boş oturumdan vazgeç: hiç set yoksa kayıt silinir (2026-11-12). */
+export async function abandonSessionAction(raw: unknown): Promise<ApiResponse<{ id: string }>> {
+  const actorId = await currentActorId();
+  if (!actorId) return unauthorized();
+
+  const parsed = parseOrFail(entityIdSchema, raw);
+  if (!parsed.ok) return parsed.failure;
+
+  try {
+    await abandonSession(parsed.data.id);
+    await writeAuditLog(
+      {
+        actorId,
+        action: 'DELETE',
+        entity: 'Workout',
+        entityId: parsed.data.id,
+        diff: { bos: true },
+      },
+      db,
+    );
+    return ok({ id: parsed.data.id });
+  } catch (error) {
+    if (error instanceof OturumHatasi) return oturumHatasi(error);
+    return toFailure('workout:abandon', error);
   }
 }

@@ -59,6 +59,9 @@ const { dbMock, izle } = vi.hoisted(() => {
     exercise: {
       create: vi.fn().mockResolvedValue(exSatir),
       update: vi.fn().mockResolvedValue(exSatir),
+      // Ad çakışması taraması (2026-11-12): varsayılan olarak kütüphanede eş ad yok.
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     workout: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -105,8 +108,12 @@ const { dbMock, izle } = vi.hoisted(() => {
 
 vi.mock('@/server/db', () => ({ db: dbMock }));
 
-const { archiveExerciseAction, createExerciseAction, updateExerciseAction } =
-  await import('@/server/actions/exercise');
+const {
+  archiveExerciseAction,
+  createExerciseAction,
+  hizliEgzersizEkleAction,
+  updateExerciseAction,
+} = await import('@/server/actions/exercise');
 const { createWorkoutAction, deleteWorkoutAction, updateWorkoutAction } =
   await import('@/server/actions/workout');
 const { createWorkoutSetAction, deleteWorkoutSetAction, updateWorkoutSetAction } =
@@ -434,6 +441,50 @@ describe('doğrulama ve hatalar', () => {
     expect(sonuc.ok === false && sonuc.error.message).toContain('rekorları böler');
     // Varsayılan P2002 metni slug'a özeldi; burada anlamsız kalırdı.
     expect(sonuc.ok === false && sonuc.error.message).not.toContain('slug');
+  });
+
+  it('⚠️ ARŞİVDEKİ aynı adlı hareket: CONFLICT arşivi SÖYLER ve kimliği verir (2026-11-12)', async () => {
+    dbMock.exercise.findFirst.mockResolvedValueOnce({
+      id: 'ex_arsiv',
+      name: 'Bench Press',
+      muscleGroup: 'CHEST',
+      equipment: 'BARBELL',
+      isArchived: true,
+      createdAt: new Date('2026-08-01T10:00:00.000Z'),
+      updatedAt: new Date('2026-08-01T10:00:00.000Z'),
+    });
+
+    const sonuc = await createExerciseAction({ name: 'bench press', muscleGroup: 'CHEST' });
+    expect(sonuc.ok === false && sonuc.error.code).toBe('CONFLICT');
+    expect(sonuc.ok === false && sonuc.error.fields?.name).toContain('arşivde');
+    expect(sonuc.ok === false && sonuc.error.fields?.arsivdekiId).toBe('ex_arsiv');
+    expect(dbMock.exercise.create).not.toHaveBeenCalled();
+  });
+
+  it('hızlı ekleme: aynı adlı AKTİF hareket seçilir, denetim YAZILMAZ (değişiklik yok)', async () => {
+    dbMock.exercise.findFirst.mockResolvedValueOnce({
+      id: 'ex_1',
+      name: 'Bench Press',
+      muscleGroup: 'CHEST',
+      equipment: 'BARBELL',
+      isArchived: false,
+      createdAt: new Date('2026-08-01T10:00:00.000Z'),
+      updatedAt: new Date('2026-08-01T10:00:00.000Z'),
+    });
+    const sonuc = await hizliEgzersizEkleAction({ name: 'BENCH PRESS', muscleGroup: 'CHEST' });
+    expect(sonuc.ok && sonuc.data.durum).toBe('mevcut');
+    expect(dbMock.exercise.create).not.toHaveBeenCalled();
+    expect(dbMock.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('hızlı ekleme: yeni hareket oluşturulur ve CREATE denetimi yazılır', async () => {
+    const sonuc = await hizliEgzersizEkleAction({ name: 'Cable Fly', muscleGroup: 'CHEST' });
+    expect(sonuc.ok && sonuc.data.durum).toBe('yeni');
+    expect(dbMock.exercise.create).toHaveBeenCalled();
+    expect(dbMock.auditLog.create.mock.calls[0]?.[0].data).toMatchObject({
+      action: 'CREATE',
+      entity: 'Exercise',
+    });
   });
 
   it('⚠️ aynı set numarası CONFLICT — hacim hesabını bozardı', async () => {

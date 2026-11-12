@@ -104,6 +104,10 @@ export interface ExerciseClient {
       where: { id: string };
       select: typeof EXERCISE_SELECT;
     }): Promise<ExerciseRow | null>;
+    findFirst(args: {
+      where: { name: { equals: string; mode: 'insensitive' } };
+      select: typeof EXERCISE_SELECT;
+    }): Promise<ExerciseRow | null>;
     create(args: {
       data: { name: string; muscleGroup: MuscleGroup; equipment: Equipment };
       select: typeof EXERCISE_SELECT;
@@ -201,6 +205,57 @@ export async function fetchExerciseById(
  * ======================================================================== */
 
 /**
+ * AYNI ADLI HAREKET — büyük/küçük harf duyarsız (2026-11-12).
+ *
+ * `name @unique` veritabanında harfe DUYARLI: "bench press" ile "Bench Press" ikisi de
+ * yazılabiliyordu ve rekorlar ikiye bölünüyordu. Daha kötüsü, ARŞİVDEKİ bir hareketle aynı adı
+ * girmek "zaten var" diyordu ama hareket listede görünmüyordu — sahibi hareketi ne bulabiliyor
+ * ne ekleyebiliyordu. Artık çakışan kayıt ÇAĞIRANA veriliyor: arşivdeyse geri alınabilir.
+ */
+export class EgzersizCakismasi extends Error {
+  constructor(readonly mevcut: ExerciseDto) {
+    super(`exercise: ad çakışması (${mevcut.isArchived ? 'arşivde' : 'aktif'})`);
+    this.name = 'EgzersizCakismasi';
+  }
+}
+
+/**
+ * Ad karşılaştırma anahtarı — SAF. Türkçe büyük/küçük harf: "İ"/"I"/"ı"/"i" aynı sayılır
+ * (klavyeden "Incline" de "incline" de "İncline" de yazılabiliyor), fazla boşluk tekleşir.
+ * Veritabanının `mode: 'insensitive'`ı bunu yapamıyor: `lower('I')` Türkçe değil.
+ */
+export function egzersizAdAnahtari(ad: string): string {
+  return ad
+    .normalize('NFC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('tr')
+    .replace(/\u0307/g, '')
+    .replace(/ı/g, 'i');
+}
+
+export async function findExerciseByName(
+  name: string,
+  client: ExerciseClient = db,
+): Promise<ExerciseDto | null> {
+  // Hızlı yol: birebir (harf duyarsız) eşleşme.
+  const row = await client.exercise.findFirst({
+    where: { name: { equals: name.trim(), mode: 'insensitive' } },
+    select: EXERCISE_SELECT,
+  });
+  if (row) return toDto(row);
+  // Türkçe harf farkı: kütüphane küçük (yüzlerce satır), bellekte karşılaştırılır.
+  const anahtar = egzersizAdAnahtari(name);
+  const hepsi = await client.exercise.findMany({
+    where: {},
+    select: EXERCISE_LIST_SELECT,
+    orderBy: [{ name: 'asc' }],
+  });
+  const bulunan = hepsi.find((e) => egzersizAdAnahtari(e.name) === anahtar);
+  return bulunan ? toDto(bulunan) : null;
+}
+
+/**
  * Egzersiz ekler.
  *
  * `name @unique` — aynı hareketi iki kez eklemek P2002 veriyor ve eylem bunu
@@ -212,6 +267,9 @@ export async function createExercise(
   input: CreateExerciseInput,
   client: ExerciseClient = db,
 ): Promise<ExerciseDto> {
+  const mevcut = await findExerciseByName(input.name, client);
+  if (mevcut) throw new EgzersizCakismasi(mevcut);
+
   const row = await client.exercise.create({
     data: {
       name: input.name,
@@ -224,12 +282,16 @@ export async function createExercise(
   return toDto(row);
 }
 
-/** Günceller — KISMİ (`undefined` ≠ "temizle"). */
+/** Günceller — KISMİ (`undefined` ≠ "temizle"). Yeni ad BAŞKA bir hareketinkiyse çakışma. */
 export async function updateExercise(
   input: UpdateExerciseInput,
   client: ExerciseClient = db,
 ): Promise<ExerciseDto> {
   const { id, ...fields } = input;
+  if (fields.name !== undefined) {
+    const mevcut = await findExerciseByName(fields.name, client);
+    if (mevcut && mevcut.id !== id) throw new EgzersizCakismasi(mevcut);
+  }
 
   const row = await client.exercise.update({
     where: { id },
@@ -263,4 +325,23 @@ export async function archiveExercise(
   });
 
   return toDto(row);
+}
+
+/**
+ * SEÇİCİDEN HIZLI EKLEME (2026-11-12) — program günü, canlı antrenman ve set formundaki
+ * "listede yok mu? yeni hareket" yolu. Ad zaten varsa YENİSİ AÇILMAZ:
+ *   - aktif → o hareket seçilir (`mevcut`),
+ *   - arşivde → arşivden çıkarılır ve seçilir (`arsivden`) — kullanıcı onu yapmak istiyor.
+ */
+export async function hizliEgzersizEkle(
+  input: CreateExerciseInput,
+  client: ExerciseClient = db,
+): Promise<{ egzersiz: ExerciseDto; durum: 'yeni' | 'mevcut' | 'arsivden' }> {
+  const mevcut = await findExerciseByName(input.name, client);
+  if (mevcut && !mevcut.isArchived) return { egzersiz: mevcut, durum: 'mevcut' };
+  if (mevcut) {
+    const egzersiz = await archiveExercise({ id: mevcut.id, isArchived: false }, client);
+    return { egzersiz, durum: 'arsivden' };
+  }
+  return { egzersiz: await createExercise(input, client), durum: 'yeni' };
 }

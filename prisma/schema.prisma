@@ -422,8 +422,9 @@ model ProgramDay {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  exercises ProgramExercise[]
-  workouts  Workout[]
+  exercises          ProgramExercise[]
+  workouts           Workout[]
+  takvimEtkinlikleri TakvimEtkinligi[]
 
   @@index([isArchived, order])
   @@map("program_day")
@@ -1002,11 +1003,15 @@ model TakvimEtkinligi {
   seriId        String?
   seri          TakvimEtkinligi?  @relation("TakvimSeri", fields: [seriId], references: [id], onDelete: Cascade)
   ayrilanlar    TakvimEtkinligi[] @relation("TakvimSeri")
+  /// Spor programı günü (2026-11-12): "Antrenmana başla" bu güne oturum açar. Gün silinirse bağ düşer.
+  programDayId  String?
+  programDay    ProgramDay?       @relation(fields: [programDayId], references: [id], onDelete: SetNull)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
   @@index([baslangic])
   @@index([tekrar])
   @@index([seriId])
+  @@index([programDayId])
   @@map("takvim_etkinligi")
 }

@@ -450,14 +450,27 @@ export async function fetchProgram(client: Client = db): Promise<ProgramGunuDto[
   }));
 }
 
-/** Açık (bitmemiş) oturum varsa kimliği ve günün adı. */
-export async function fetchActiveSession(
-  client: Client = db,
-): Promise<{ id: string; gunAdi: string | null; startedAt: string; gun: AppDay | null } | null> {
+/** Açık (bitmemiş) oturum varsa kimliği, günün adı ve kaç set girildiği. */
+export async function fetchActiveSession(client: Client = db): Promise<{
+  id: string;
+  gunAdi: string | null;
+  startedAt: string;
+  gun: AppDay | null;
+  programDayId: string | null;
+  /** Bilinmiyorsa `null` — boş sayılmaz. */
+  setSayisi: number | null;
+} | null> {
   const w = await client.workout.findFirst({
     where: { startedAt: { not: null }, finishedAt: null },
     orderBy: { startedAt: 'desc' },
-    select: { id: true, date: true, startedAt: true, programDay: { select: { name: true } } },
+    select: {
+      id: true,
+      date: true,
+      startedAt: true,
+      programDayId: true,
+      programDay: { select: { name: true } },
+      _count: { select: { sets: true } },
+    },
   });
   return w && w.startedAt
     ? {
@@ -465,6 +478,8 @@ export async function fetchActiveSession(
         gunAdi: w.programDay?.name ?? null,
         startedAt: w.startedAt.toISOString(),
         gun: w.date ? dateToAppDay(w.date) : null,
+        programDayId: w.programDayId ?? null,
+        setSayisi: w._count?.sets ?? null,
       }
     : null;
 }
@@ -739,6 +754,11 @@ async function eskiOturumuKapat(id: string, client: Client): Promise<void> {
 /**
  * Oturum başlatır. Bugünkü açık oturum varsa ONU döndürür (ikinci oturum açılmaz);
  * başka günden kalanı kapatıp bugünün programını başlatır.
+ *
+ * ⚠️ BOŞ OTURUM TUZAĞI (2026-11-12): bugün BAŞKA bir program gününden açılmış ve HİÇ set
+ * girilmemiş oturum artık yeni günün önünü kesmiyor — silinip istenen gün başlıyor. Eskiden
+ * hareketsiz bir günü yanlışlıkla başlatmak, gün bitene kadar her "Başlat"ı o boş ekrana
+ * yönlendiriyordu (ekranda ne hareket ekleme ne bitirme vardı).
  */
 export async function startSession(
   dayId: string,
@@ -747,8 +767,12 @@ export async function startSession(
   simdi: Date = new Date(),
 ): Promise<{ id: string; yeni: boolean }> {
   const acik = await fetchActiveSession(client);
-  if (acik && (acik.gun === null || acik.gun === bugun)) return { id: acik.id, yeni: false };
-  if (acik) await eskiOturumuKapat(acik.id, client);
+  // Yalnızca bir PROGRAM GÜNÜNDEN açılmış oturum: programsız açık kayıt başka bir yolun işi.
+  const bosVeBaskaGun =
+    acik?.setSayisi === 0 && acik.programDayId !== null && acik.programDayId !== dayId;
+  if (acik && bosVeBaskaGun) await client.workout.delete({ where: { id: acik.id } });
+  else if (acik && (acik.gun === null || acik.gun === bugun)) return { id: acik.id, yeni: false };
+  else if (acik) await eskiOturumuKapat(acik.id, client);
 
   const gun = await client.programDay.findUnique({
     where: { id: dayId },
@@ -770,8 +794,23 @@ export async function startSession(
   return { id: w.id, yeni: true };
 }
 
+/**
+ * Açık oturumdan VAZGEÇ (2026-11-12): hiç set girilmemişse kayıt silinir. Set varsa silinmez —
+ * yapılmış iş kaybolmasın; o durumda "Bitir" ya da antrenman detayından silme var.
+ */
+export async function abandonSession(workoutId: string, client: Client = db): Promise<void> {
+  const w = await client.workout.findUnique({
+    where: { id: workoutId },
+    select: { startedAt: true, finishedAt: true, _count: { select: { sets: true } } },
+  });
+  if (!w || !w.startedAt) throw new OturumHatasi('OTURUM_YOK');
+  if (w.finishedAt) throw new OturumHatasi('BITMIS');
+  if (w._count.sets > 0) throw new OturumHatasi('SETLI');
+  await client.workout.delete({ where: { id: workoutId } });
+}
+
 export class OturumHatasi extends Error {
-  constructor(readonly sebep: 'GUN_YOK' | 'OTURUM_YOK' | 'BITMIS') {
+  constructor(readonly sebep: 'GUN_YOK' | 'OTURUM_YOK' | 'BITMIS' | 'SETLI') {
     super(`oturum: ${sebep}`);
     this.name = 'OturumHatasi';
   }
