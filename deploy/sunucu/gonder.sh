@@ -130,6 +130,12 @@ ssh "${SSH_SECENEK[@]}" "$SUNUCU" "umask 077; cd /opt/sahinsamet && mkdir -p yed
 # Eski sürümler: güncel + bir önceki (geri dönüş için) kalır, gerisi silinir.
 # Her sürüm ~2,6 GB; disk müşteri siteleri ve mailcow ile paylaşılıyor.
 # `up` başarısızsa (göç düştüyse) yayın başarısızdır; temizlik hatası değildir.
+# Compose repodan (2026-11-17): sunucuda DOĞRULANIR (`config -q`), geçersizse eski yerinde kalır.
+ssh "${SSH_SECENEK[@]}" "$SUNUCU" 'cat > /opt/sahinsamet/docker-compose.yml.yeni' < deploy/sunucu/docker-compose.yml
+ssh "${SSH_SECENEK[@]}" "$SUNUCU" "cd /opt/sahinsamet && docker compose -f docker-compose.yml.yeni config -q && \
+  cp docker-compose.yml docker-compose.yml.onceki && mv docker-compose.yml.yeni docker-compose.yml" \
+  || { echo "[gonder] sunucuda compose doğrulanamadı — yayın durdu, canlı değişmedi." >&2; exit 1; }
+
 IMAJ_ONCE=$(ssh "${SSH_SECENEK[@]}" "$SUNUCU" "docker inspect -f '{{.Image}}' sahinsamet-uygulama-1 2>/dev/null || true")
 ssh "${SSH_SECENEK[@]}" "$SUNUCU" "cd /opt/sahinsamet && docker compose up -d --remove-orphans"
 IMAJ_SONRA=$(ssh "${SSH_SECENEK[@]}" "$SUNUCU" "docker inspect -f '{{.Image}}' sahinsamet-uygulama-1")

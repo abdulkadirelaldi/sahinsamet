@@ -14,8 +14,34 @@ GUNLUK="$HOME/Library/Logs/sahinsamet-yayin.log"
 BURASI="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
 if [ "${SAHINSAMET_ARKADA:-}" != 1 ]; then
-  SAHINSAMET_ARKADA=1 nohup caffeinate -i bash "$BURASI" "$n" >>"$GUNLUK" 2>&1 </dev/null &
-  echo "Arka planda başladı. Günlük: $GUNLUK"
+  # launchd işi (2026-11-17): `nohup … &` başlatan oturumun süreç grubunda kalıyor, oturum
+  # kapanınca SIGTERM alıp yarıda kalabiliyordu (aelaldi #119'da ölçüldü). Tek seferlik iş.
+  ETIKET="com.sahinsamet.yayin.$n"
+  PLIST="$HOME/Library/LaunchAgents/$ETIKET.plist"
+  mkdir -p "$HOME/Library/LaunchAgents" "$(dirname "$GUNLUK")"
+  cat >"$PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$ETIKET</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/caffeinate</string><string>-i</string>
+    <string>/bin/bash</string><string>$BURASI</string><string>$n</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>SAHINSAMET_ARKADA</key><string>1</string>
+    <key>PATH</key><string>$PATH</string>
+    <key>HOME</key><string>$HOME</string>
+  </dict>
+  <key>WorkingDirectory</key><string>$(pwd)</string>
+  <key>StandardOutPath</key><string>$GUNLUK</string>
+  <key>StandardErrorPath</key><string>$GUNLUK</string>
+  <key>RunAtLoad</key><true/>
+</dict></plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/$ETIKET" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$PLIST"
+  echo "Arka planda başladı (launchd: $ETIKET). Günlük: $GUNLUK"
   exit 0
 fi
 
@@ -66,4 +92,5 @@ else
 fi
 rc=$?
 echo "--- #$n bitti, çıkış=$rc $(date)"
+rm -f "$HOME/Library/LaunchAgents/com.sahinsamet.yayin.$n.plist"
 exit "$rc"

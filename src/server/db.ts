@@ -23,30 +23,27 @@ import { guvenliHata } from '@/lib/security/guvenli-log';
  */
 const POOL_CONFIG = {
   /**
-   * Süreç başına en fazla 10 bağlantı.
-   * Postgres varsayılan `max_connections` = 100. Tek uygulama container'ı çalışıyor;
-   * geriye migration, `psql` ve gece `pg_dump` yedeği (§8.21) için bol pay kalıyor.
-   * Tek kullanıcılı panel için 10 zaten fazlasıyla yeterli — public tarafın SSR
-   * ani yüklenmelerini de karşılar.
+   * 2026-11-17 — "panel kasıyor" ölçümü: sunucu 1 vCPU ve CPU'nun ~%65'i steal; aynı anda 10 YENİ
+   * Postgres bağlantısı açmak 1,3–11 sn sürdü (tek bağlantı <1 sn). Bugün ekranı ~11 sorguyu paralel
+   * atıyor, eski ayarla (boşta 30 sn'de kapat) her seyrek ziyarette havuz sıfırdan kuruluyordu.
+   * Çözüm: bağlantılar AÇIK kalır; tek CPU'da 10 paralel bağlantının faydası yok, 5 yeter.
    */
-  max: 10,
-
+  max: 5,
+  /** Boşta kapatma yok (0) — bağlantı kurma maliyeti her ziyarette ödenmesin. */
+  idleTimeoutMillis: 0,
   /**
-   * Boşta 30 sn duran bağlantı kapatılır.
-   * Panel gün içinde seyrek kullanılır; bağlantıları açık tutmanın faydası yok.
-   * Ayrıca DB yeniden başlatıldığında (Coolify dağıtımı, yedek penceresi) ölü
-   * bağlantıların havuzda takılı kalma süresini sınırlar.
+   * Boştaki bağlantılar süreci AYAKTA TUTMAZ: kısa betikler (yedek, seed) `closeDatabase()`e
+   * ulaşamadan hata alsa da kapanır (BULGU-007'nin ikinci savunması). Web sunucusu zaten açık.
    */
-  idleTimeoutMillis: 30_000,
-
+  allowExitOnIdle: true,
+  /** Ölü bağlantıyı (DB yeniden başladı, ağ koptu) TCP düzeyinde fark et. */
+  keepAlive: true,
   /**
-   * Havuzdan bağlantı alma denemesi 5 sn'de vazgeçer.
-   * `pg` varsayılanı 0'dır — yani SONSUZA KADAR bekler. Bu, DB kapalıyken
-   * `/api/v1/health` ucunun 503 dönmek yerine asılı kalmasına ve izlemenin
-   * (§13.7 Uptime Kuma) zaman aşımına düşmesine yol açardı. Hızlı başarısızlık
-   * doğru davranıştır.
+   * Havuzdan bağlantı alma en çok 10 sn bekler (pg varsayılanı sonsuz). 5 sn sıkışık anlarda
+   * gereksiz hata üretiyordu ("timeout exceeded when trying to connect", 3 günde 9 kez);
+   * sağlık ucunun kendi 5 sn'lik yoklama sınırı ayrı, izleme yine hızlı düşer.
    */
-  connectionTimeoutMillis: 5_000,
+  connectionTimeoutMillis: 10_000,
 } as const;
 
 function createPool(): Pool {

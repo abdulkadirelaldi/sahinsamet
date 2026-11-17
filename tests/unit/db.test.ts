@@ -125,7 +125,7 @@ describe('tembel kurulum — modül yüklenirken havuz KURULMAZ', () => {
     await pingDatabase();
 
     expect(poolConstructorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ connectionTimeoutMillis: 5_000 }),
+      expect.objectContaining({ connectionTimeoutMillis: 10_000 }),
     );
   });
 });
