@@ -5159,6 +5159,15 @@ silinmemesi** · `schema` ayıklanması ve `sslmode` korunması.
 
 **Doğrulama:** `pnpm audit --audit-level high` → yalnızca ADVISORY-006 (`braces`, süreli istisna) kaldı. 2306 birim + `next build` yeni vite ile yeşil.
 
+## ADVISORY-008 — `picomatch` ≤4.0.7 (GHSA-fc5q-39xc-vjpf, Yüksek, geçişli, yalnızca geliştirme)
+
+**Tarih:** 2026-11-17 · **Durum:** SÜRELİ İSTİSNA (bitiş 2026-12-08) · **Onay:** sahibi, 2026-11-18 · **Bulan:** §8.24 kapısı — kodda değişiklik yokken kırmızıya döndü.
+
+- **Açık:** tekrarlanan tek dallı extglob'larla ReDoS. **Yamalı sürüm YOK** (`patched_versions: <0.0.0`) — override ile çözülemez.
+- **Maruziyet — ölçüldü:** 59 yol, 9 kök (`@next/eslint-plugin-next`, `eslint-config-next`, `@typescript-eslint/*`, `vite`, `vitest`, `@vitest/coverage-v8`, `@vitejs/plugin-react`, `vite-tsconfig-paths`); sürümler 2.3.2 · 4.0.5 · 4.0.7. **`pnpm audit --prod`: bulgu yok** — canlı imaja girmiyor. Desen girdisi yalnızca kendi yapılandırma dosyalarımızdan (güvenilir).
+- **Koruma:** `yalnizGelistirme: true` — kapı ayrıca `pnpm audit --prod` koşar; açık üretim bağımlılığına sızarsa istisna geçersiz. Süre 3 hafta: yamalı sürüm çıkınca override ile kapatılıp istisna silinir.
+- Aynı gün `minimatch` (GHSA-g3hv-75wg-m249, Orta) — kapı Yüksek/Kritik'te durur; yaması var (≥11.0.1), üst paketler güncellenince kalkar.
+
 ## §8 Güvenlik Gereksinimleri — Durum Tablosu
 
 **Ölçüm tarihi:** 2026-10-16 · **Faz:** F5 öncesi · **Son görev:** T-066

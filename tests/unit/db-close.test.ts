@@ -130,9 +130,11 @@ describe('havuz önbelleği — üretimde de tek havuz', () => {
     await pingDatabase();
     expect(mocks.poolConstructor).toHaveBeenCalledWith(
       expect.objectContaining({
-        max: 10,
-        idleTimeoutMillis: 30_000,
-        connectionTimeoutMillis: 5_000,
+        max: 5,
+        idleTimeoutMillis: 0,
+        allowExitOnIdle: true,
+        keepAlive: true,
+        connectionTimeoutMillis: 10_000,
       }),
     );
   });

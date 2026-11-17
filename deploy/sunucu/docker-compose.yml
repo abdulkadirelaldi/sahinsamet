@@ -56,6 +56,8 @@ services:
 
   uygulama:
     image: sahinsamet-uygulama:latest
+    # PID 1 olarak tini: biten alt süreçleri toplar (2026-11-17: 114 zombi ölçüldü).
+    init: true
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
@@ -92,6 +94,8 @@ services:
 
   araclar:
     image: sahinsamet-araclar:latest
+    # PID 1 olarak tini: biten alt süreçleri toplar (2026-11-17: 114 zombi ölçüldü).
+    init: true
     restart: unless-stopped
     # HTTP dinlemez; yönetici açma (seed), şifre sıfırlama ve yedek betikleri burada koşar.
     command: ['sleep', 'infinity']
