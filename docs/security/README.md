@@ -5161,7 +5161,7 @@ silinmemesi** · `schema` ayıklanması ve `sslmode` korunması.
 
 ## ADVISORY-008 — `picomatch` ≤4.0.7 (GHSA-fc5q-39xc-vjpf, Yüksek, geçişli, yalnızca geliştirme)
 
-**Tarih:** 2026-11-17 · **Durum:** SÜRELİ İSTİSNA (bitiş 2026-12-08) · **Onay:** sahibi, 2026-11-18 · **Bulan:** §8.24 kapısı — kodda değişiklik yokken kırmızıya döndü.
+**Tarih:** 2026-11-17 · **Durum:** **KAPANDI** (2026-11-19 — `pnpm audit` artık bildirmiyor; kapı "istisna GEREKSİZ" dedi, istisna silindi) · eski hâli: SÜRELİ İSTİSNA (bitiş 2026-12-08) · **Onay:** sahibi, 2026-11-18 · **Bulan:** §8.24 kapısı — kodda değişiklik yokken kırmızıya döndü.
 
 - **Açık:** tekrarlanan tek dallı extglob'larla ReDoS. **Yamalı sürüm YOK** (`patched_versions: <0.0.0`) — override ile çözülemez.
 - **Maruziyet — ölçüldü:** 59 yol, 9 kök (`@next/eslint-plugin-next`, `eslint-config-next`, `@typescript-eslint/*`, `vite`, `vitest`, `@vitest/coverage-v8`, `@vitejs/plugin-react`, `vite-tsconfig-paths`); sürümler 2.3.2 · 4.0.5 · 4.0.7. **`pnpm audit --prod`: bulgu yok** — canlı imaja girmiyor. Desen girdisi yalnızca kendi yapılandırma dosyalarımızdan (güvenilir).
