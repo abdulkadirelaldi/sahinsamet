@@ -428,16 +428,11 @@ jobs:
              * "istisna GEREKSİZ" diyerek kendisi sildirdi. Kayıt:
              * docs/security/README.md → ADVISORY-006 KAPANDI.
              */
-            {
-              ghsa: 'GHSA-fc5q-39xc-vjpf',
-              paket: 'picomatch',
-              bitis: '2026-12-08',
-              kayit: 'ADVISORY-008',
-              // 59 yol, 9 kök — hepsi geliştirme aracı (eslint, vite, vitest); ortak yol parçası yok.
-              // Koruma yol değil: açık ÜRETİM bağımlılıklarına sızarsa istisna düşer.
-              yolIcermeli: 'picomatch@',
-              yalnizGelistirme: true,
-            },
+            /*
+             * ADVISORY-008 (GHSA-fc5q-39xc-vjpf, picomatch) BURADAN KALDIRILDI —
+             * 2026-11-19'da `pnpm audit` artık bildirmiyor; kapı "istisna GEREKSİZ" dedi.
+             * `yalnizGelistirme` denetimi gelecekteki istisnalar için yerinde.
+             */
           ];
 
           let prodGhsa = new Set();
